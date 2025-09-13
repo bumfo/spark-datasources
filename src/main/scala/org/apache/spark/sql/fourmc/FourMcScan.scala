@@ -3,6 +3,7 @@ package org.apache.spark.sql.fourmc
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read.{Batch, PartitionReaderFactory, Scan, ScanBuilder}
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
@@ -12,6 +13,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.util.SerializableConfiguration
 
 import java.util.Locale
+import scala.collection.mutable
 
 /**
  * Builder for 4mc scans.  Similar to CSVScanBuilder, it accepts Spark's
@@ -160,9 +162,9 @@ final class FourMcScan(
 
     val splitFiles: Seq[PartitionedFile] = if (useParallel) {
       // Map each file path to its partition values
-      val partValuesByPath = scala.collection.mutable.HashMap.empty[String, org.apache.spark.sql.catalyst.InternalRow]
+      val partValuesByPath = mutable.HashMap.empty[String, org.apache.spark.sql.catalyst.InternalRow]
       // Cache preferred hosts per file path using Spark's helper
-      val hostsByPath = scala.collection.mutable.HashMap.empty[String, Array[String]]
+      val hostsByPath = mutable.HashMap.empty[String, Array[String]]
       selectedPartitions.foreach { partition =>
         val pvalues = if (readPartitionAttributes != partitionAttributes) {
           partitionValueProject(partition.values).copy()
@@ -191,7 +193,7 @@ final class FourMcScan(
         parallelExpandMax
       )
       slices.iterator.map { s =>
-        val pv = partValuesByPath.getOrElse(s.path, org.apache.spark.sql.catalyst.InternalRow.empty)
+        val pv = partValuesByPath.getOrElse(s.path, InternalRow.empty)
         val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
         PartitionedFile(pv, s.path, s.start, s.length, hosts)
       }.toSeq.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
@@ -282,7 +284,7 @@ object FourMcBlockPlanner {
       return Seq(pf.copy(start = 0L, length = fileLen))
     }
     val blocks = index.getNumberOfBlocks
-    val out = scala.collection.mutable.ArrayBuffer[PartitionedFile]()
+    val out = mutable.ArrayBuffer[PartitionedFile]()
     var i = 0
     while (i < blocks) {
       val start = if (i == 0) 0L else index.getPosition(i)
