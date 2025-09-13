@@ -36,6 +36,21 @@ final class FourMcJsonFileDataSource extends FourMcFileDataSource {
       fallbackFileFormat = fallbackFileFormat
     )
   }
+
+  override def getTable(options: CaseInsensitiveStringMap, schema: StructType): Table = {
+    val paths = parsePaths(options)
+    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.json datasource")
+    val cleaned = dropPathOptions(options)
+    val tableName = computeTableName(paths)
+    new FourMcJsonTable(
+      name = tableName,
+      sparkSession = SparkSession.active,
+      options = cleaned,
+      paths = paths,
+      userSpecifiedSchema = Some(schema),
+      fallbackFileFormat = fallbackFileFormat
+    )
+  }
 }
 
 class FourMcJsonTable(
@@ -47,25 +62,26 @@ class FourMcJsonTable(
     fallbackFileFormat: Class[_ <: org.apache.spark.sql.execution.datasources.FileFormat]
 ) extends FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat) {
   override protected def buildScanBuilder(): FourMcScanBuilder =
-    new FourMcJsonScanBuilder(sparkSession, fileIndex, options)
+    new FourMcJsonScanBuilder(sparkSession, fileIndex, options, schema)
+
+  override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
+    val parsedOptions = new org.apache.spark.sql.catalyst.json.JSONOptionsInRead(
+      options.asScala.toMap,
+      sparkSession.sessionState.conf.sessionLocalTimeZone,
+      sparkSession.sessionState.conf.columnNameOfCorruptRecord
+    )
+    org.apache.spark.sql.execution.datasources.json.JsonDataSource(parsedOptions)
+      .inferSchema(sparkSession, files, parsedOptions)
+  }
 }
 
 final class FourMcJsonScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
-    opts: CaseInsensitiveStringMap
+    opts: CaseInsensitiveStringMap,
+    readSchema: StructType
 ) extends FourMcScanBuilder(spark, fileIndex, opts) {
   override lazy val build: Scan = {
-    val withOffset: Boolean =
-      java.lang.Boolean.parseBoolean(options.getOrDefault("withOffset", "false"))
-    val readSchema = if (withOffset) {
-      StructType(Seq(
-        org.apache.spark.sql.types.StructField("offset", org.apache.spark.sql.types.LongType, nullable = false),
-        org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)
-      ))
-    } else {
-      StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)))
-    }
     val partitionSchema = fileIndex.partitionSchema
     new FourMcJsonScan(
       spark,
