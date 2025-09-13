@@ -33,6 +33,19 @@
   - `git commit --amend -m "Subject" -m "Body" -m "Co-Authored-By: Codex CLI"`
   - Or interactively: `git commit --amend` and add `Co-Authored-By: Codex CLI` on a new line.
 
+### Commit Message Formatting
+- Always use real line breaks inside bash quotes; both `\n` and `\\n` are incorrect (they are recorded literally).
+- Preferred:
+  - `git commit -m "Title
+
+    Subject
+
+    Co-Authored-By: Codex CLI"`
+- Also acceptable:
+  - `git commit -m "Title" -m "Subject" -m "Co-Authored-By: Codex CLI"`
+- Incorrect (records backslashes):
+  - `git commit -m "Title\\n\\nSubject\\nCo-Authored-By: Codex CLI"`
+
 ## Security & Configuration Tips
 - Dependencies marked `provided` (Spark) must be present at runtime. Ensure the 4mc codec is on the classpath when using the datasource.
 - Keep Scala/Spark versions aligned when upgrading and validate end-to-end reads with sample 4mc files.
