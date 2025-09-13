@@ -36,3 +36,8 @@
 ## Security & Configuration Tips
 - Dependencies marked `provided` (Spark) must be present at runtime. Ensure the 4mc codec is on the classpath when using the datasource.
 - Keep Scala/Spark versions aligned when upgrading and validate end-to-end reads with sample 4mc files.
+
+## Agent-Specific Instructions
+- Inlining policy: only inline functions the user explicitly asks for, or short private helpers that cannot be called directly.
+- Prefer reusing existing Spark/Hadoop APIs over copying code.
+- Always ask before inlining a large piece of code.
