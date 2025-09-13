@@ -1,12 +1,10 @@
 package org.apache.spark.sql.fourmc
 
-import java.util.Locale
-
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.Table
-import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
+import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.sources.DataSourceRegister
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -24,7 +22,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
  * sources.
  */
 class FourMcFileDataSource
-    extends FileDataSourceV2
+  extends FileDataSourceV2
     with DataSourceRegister {
 
   /**
@@ -32,6 +30,27 @@ class FourMcFileDataSource
    * `spark.read.format("fourmc")` to access it.
    */
   override def shortName(): String = "fourmc"
+
+  /**
+   * Returns a table with inferred schema.  Spark calls this method when
+   * schema inference is required.  We build a [[FourMcTable]] which will
+   * infer a schema consisting of an optional offset column and a value
+   * column.  Options specifying `withOffset=true` influence the schema.
+   */
+  override def getTable(options: CaseInsensitiveStringMap): Table = {
+    val paths = parsePaths(options)
+    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc datasource")
+    val cleaned = dropPathOptions(options)
+    val tableName = computeTableName(paths)
+    FourMcTable(
+      name = tableName,
+      sparkSession = SparkSession.active,
+      options = cleaned,
+      paths = paths,
+      userSpecifiedSchema = None,
+      fallbackFileFormat = fallbackFileFormat
+    )
+  }
 
   /**
    * The legacy file format associated with this data source.  We use
@@ -92,27 +111,6 @@ class FourMcFileDataSource
       if (lastSlash >= 0 && lastSlash < first.length - 1) first.substring(lastSlash + 1)
       else first
     }
-  }
-
-  /**
-   * Returns a table with inferred schema.  Spark calls this method when
-   * schema inference is required.  We build a [[FourMcTable]] which will
-   * infer a schema consisting of an optional offset column and a value
-   * column.  Options specifying `withOffset=true` influence the schema.
-   */
-  override def getTable(options: CaseInsensitiveStringMap): Table = {
-    val paths = parsePaths(options)
-    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc datasource")
-    val cleaned = dropPathOptions(options)
-    val tableName = computeTableName(paths)
-    FourMcTable(
-      name = tableName,
-      sparkSession = SparkSession.active,
-      options = cleaned,
-      paths = paths,
-      userSpecifiedSchema = None,
-      fallbackFileFormat = fallbackFileFormat
-    )
   }
 
   /**

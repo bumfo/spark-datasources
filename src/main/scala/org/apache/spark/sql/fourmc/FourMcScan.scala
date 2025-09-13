@@ -1,24 +1,25 @@
 package org.apache.spark.sql.fourmc
 
-import java.util.Locale
-import org.apache.hadoop.fs.{Path, FileSystem, FileStatus, LocatedFileStatus, BlockLocation}
-import org.apache.spark.sql.execution.PartitionedFileUtil
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory, Scan, ScanBuilder}
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.v2.{FileScan, FileTable}
+import org.apache.spark.sql.connector.read.{Batch, PartitionReaderFactory, Scan, ScanBuilder}
+import org.apache.spark.sql.execution.PartitionedFileUtil
+import org.apache.spark.sql.execution.datasources.FilePartition
+import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.util.SerializableConfiguration
+
+import java.util.Locale
 
 /**
  * Builder for 4mc scans.  Similar to CSVScanBuilder, it accepts Spark's
  * internal FileIndex and schemas, then produces a [[FourMcScan]] when
  * build() is invoked.
  */
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 import org.apache.spark.sql.catalyst.expressions.Expression
+import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 
 /**
  * Builder for 4mc scans.  Similar to Spark's CSVScanBuilder, this builder
@@ -75,8 +76,6 @@ final class FourMcScanBuilder(
  * footer index.  It returns a reader factory that instantiates per-slice
  * readers.
  */
-import org.apache.spark.sql.catalyst.expressions.Expression
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 
 /**
  * FileScan for 4mc files.  This class builds upon Spark's [[FileScan]] to
@@ -110,7 +109,6 @@ final class FourMcScan(
 
   // Match FileScan's case-sensitivity and name normalization logic
   private val isCaseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis
-  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /**
    * Human-readable description used in the query plan.  This appears in the
@@ -140,10 +138,9 @@ final class FourMcScan(
     val partitionAttributes = fileIndex.partitionSchema.toAttributes
     val attributeMap = partitionAttributes.map(a => normalizeName(a.name) -> a).toMap
     val readPartitionAttributes = readPartitionSchema.map { readField =>
-      attributeMap.get(normalizeName(readField.name)).getOrElse {
+      attributeMap.getOrElse(normalizeName(readField.name),
         throw org.apache.spark.sql.errors.QueryCompilationErrors
-          .cannotFindPartitionColumnInPartitionSchemaError(readField, fileIndex.partitionSchema)
-      }
+          .cannotFindPartitionColumnInPartitionSchemaError(readField, fileIndex.partitionSchema))
     }
     lazy val partitionValueProject =
       org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
@@ -167,17 +164,10 @@ final class FourMcScan(
       }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     }
 
-    if (splitFiles.length == 1) {
-      val path = new Path(splitFiles(0).filePath)
-      if (!isSplitable(path) && splitFiles(0).length >
-        sparkSession.sparkContext.getConf.get(org.apache.spark.internal.config.IO_WARNING_LARGEFILETHRESHOLD)) {
-        logWarning(s"Loading one large unsplittable file ${path.toString} with only one " +
-          s"partition, the reason is: ${getFileUnSplittableReason(path)}")
-      }
-    }
-
     FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
   }
+
+  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /**
    * Provide a reader factory that will create readers per input partition.  A
@@ -217,6 +207,7 @@ final class FourMcScan(
  * 4mc block boundaries.  The logic is extracted here for clarity.
  */
 object FourMcBlockPlanner {
+
   import com.fing.compression.fourmc.FourMcBlockIndex
   import org.apache.spark.sql.execution.datasources.PartitionedFile
 
@@ -249,7 +240,7 @@ object FourMcBlockPlanner {
       var acc = 0L
       var j = i
       while (j < blocks && (acc < maxPartitionBytes || j == i)) {
-        val cur  = index.getPosition(j)
+        val cur = index.getPosition(j)
         val next = if (j + 1 < blocks) index.getPosition(j + 1) else fileLen
         acc += (next - cur)
         end = next
