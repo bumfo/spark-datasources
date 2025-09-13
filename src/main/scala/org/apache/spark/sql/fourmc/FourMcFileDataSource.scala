@@ -6,6 +6,7 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.text.TextFileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.sources.DataSourceRegister
+import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 /**
@@ -47,6 +48,30 @@ class FourMcFileDataSource
       options = cleaned,
       paths = paths,
       userSpecifiedSchema = None,
+      fallbackFileFormat = fallbackFileFormat
+    )
+  }
+
+  /**
+   * Returns a table with a user‑provided schema.  Spark calls this method
+   * when the schema is specified explicitly by the user.  We construct
+   * a [[FourMcTable]] with the provided schema so that Spark can skip
+   * inference.  Partitioning and properties are unused for this
+   * simple read‑only source.
+   */
+  override def getTable(
+      options: CaseInsensitiveStringMap,
+      schema: StructType): Table = {
+    val paths = parsePaths(options)
+    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc datasource")
+    val cleaned = dropPathOptions(options)
+    val tableName = computeTableName(paths)
+    FourMcTable(
+      name = tableName,
+      sparkSession = SparkSession.active,
+      options = cleaned,
+      paths = paths,
+      userSpecifiedSchema = Some(schema),
       fallbackFileFormat = fallbackFileFormat
     )
   }

@@ -8,6 +8,7 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileTable
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.util.SerializableConfiguration
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -34,13 +35,18 @@ class FourMcTable(
     val fallbackFileFormat: Class[_ <: FileFormat]
 ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
 
+  protected lazy val planner: FourMcPlanner = {
+    val br = sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
+    FourMcPlanner(sparkSession, fileIndex, options, fileIndex.partitionSchema, Seq.empty, Seq.empty, br)
+  }
+
   /**
    * Build a custom scan for this table.  The returned builder will plan
    * partitions based on the 4mc footer block index and create readers
    * accordingly.
    */
   protected def buildScanBuilder(): FourMcScanBuilder =
-    new FourMcScanBuilder(sparkSession, fileIndex, options)
+    new FourMcScanBuilder(sparkSession, fileIndex, options, planner)
 
   private lazy val cachedScanBuilder: FourMcScanBuilder = buildScanBuilder()
 

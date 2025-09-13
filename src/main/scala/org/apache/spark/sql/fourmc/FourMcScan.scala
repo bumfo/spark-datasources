@@ -3,11 +3,8 @@ package org.apache.spark.sql.fourmc
 import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.connector.read._
-import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.v2.FileScan
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.util.SerializableConfiguration
@@ -36,7 +33,8 @@ import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 class FourMcScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
-    val options: CaseInsensitiveStringMap
+    val options: CaseInsensitiveStringMap,
+    planner: FourMcPlanner
 ) extends ScanBuilder {
 
   // Determine whether to include the offset column.  We re-compute the data
@@ -66,7 +64,8 @@ class FourMcScanBuilder(
       options = options,
       readPartitionSchema = partitionSchema,
       partitionFilters = Seq.empty,
-      dataFilters = Seq.empty
+      dataFilters = Seq.empty,
+      planner = planner
     )
   }
 }
@@ -96,7 +95,8 @@ class FourMcScan(
     options: CaseInsensitiveStringMap,
     override val readPartitionSchema: StructType,
     override val partitionFilters: Seq[Expression],
-    override val dataFilters: Seq[Expression]
+    override val dataFilters: Seq[Expression],
+    planner: FourMcPlanner
 ) extends FileScan with Batch {
 
   // Broadcast the Hadoop configuration so that executors can construct
@@ -141,84 +141,7 @@ class FourMcScan(
    * footer index, then coalesce those slices back into FilePartitions using
    * Spark's helper to balance task sizes.
    */
-  override lazy val planInputPartitions: Array[InputPartition] = {
-    // This inlines FileScan.partitions and replaces file splitting with 4mc-aware expansion.
-    val selectedPartitions = fileIndex.listFiles(partitionFilters, dataFilters)
-    val maxSplitBytes = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
-
-    val partitionAttributes = fileIndex.partitionSchema.toAttributes
-    val attributeMap = partitionAttributes.map(a => normalizeName(a.name) -> a).toMap
-    val readPartitionAttributes = readPartitionSchema.map { readField =>
-      attributeMap.getOrElse(normalizeName(readField.name),
-        throw org.apache.spark.sql.errors.QueryCompilationErrors
-          .cannotFindPartitionColumnInPartitionSchemaError(readField, fileIndex.partitionSchema))
-    }
-    lazy val partitionValueProject =
-      org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
-        .generate(readPartitionAttributes, partitionAttributes)
-
-    val allFiles = selectedPartitions.flatMap(_.files)
-    val useParallel = parallelExpandEnabled && allFiles.size >= parallelExpandThreshold
-
-    val splitFiles: Seq[PartitionedFile] = if (useParallel) {
-      // Map each file path to its partition values
-      val partValuesByPath = mutable.HashMap.empty[String, org.apache.spark.sql.catalyst.InternalRow]
-      // Cache preferred hosts per file path using Spark's helper
-      val hostsByPath = mutable.HashMap.empty[String, Array[String]]
-      selectedPartitions.foreach { partition =>
-        val pvalues = if (readPartitionAttributes != partitionAttributes) {
-          partitionValueProject(partition.values).copy()
-        } else partition.values
-        partition.files.foreach { f =>
-          val pStr = f.getPath.toUri.toString
-          // Cache only meaningful partition values (non-empty row)
-          if (pvalues.numFields > 0) {
-            partValuesByPath.update(pStr, pvalues)
-          }
-          val base = PartitionedFileUtil.getPartitionedFile(f, f.getPath, pvalues)
-          // Cache only non-empty preferred locations
-          val locs = base.locations
-          if (locs != null && locs.nonEmpty) {
-            hostsByPath.update(pStr, locs)
-          }
-        }
-      }
-      // Prepare (path, len) pairs
-      val pairs = allFiles.map(f => (f.getPath.toUri.toString, f.getLen))
-      val slices = FourMcParallelPlanner.expandWithSparkJob(
-        sparkSession.sparkContext,
-        pairs,
-        broadcastConf,
-        maxSplitBytes,
-        parallelExpandMax
-      )
-      val empty = InternalRow(Array.empty)
-      slices.iterator.map { s =>
-        val pv = partValuesByPath.getOrElse(s.path, empty)
-        val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
-        PartitionedFile(pv, s.path, s.start, s.length, hosts)
-      }.toSeq.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
-    } else {
-      selectedPartitions.flatMap { partition =>
-        // Prune partition values if part of the partition columns are not required.
-        val partitionValues = if (readPartitionAttributes != partitionAttributes) {
-          partitionValueProject(partition.values).copy()
-        } else {
-          partition.values
-        }
-        partition.files.flatMap { file =>
-          val filePath = file.getPath
-          // Build a single PartitionedFile for the whole file (with proper hosts)
-          val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
-          // Expand it into 4mc block-aligned slices using the helper
-          FourMcBlockPlanner
-            .expandPartitionedFile(base, maxSplitBytes, broadcastConf)
-        }
-      }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
-    }
-
-    FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes).toArray
-  }
+  override lazy val planInputPartitions: Array[InputPartition] = planner.filePartitions
 
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
@@ -250,7 +173,8 @@ class FourMcScan(
       options,
       readPartitionSchema,
       partitionFilters,
-      dataFilters
+      dataFilters,
+      planner.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
     )
   }
 }
@@ -259,49 +183,4 @@ class FourMcScan(
  * Companion object with helper functions to expand partitioned files along
  * 4mc block boundaries.  The logic is extracted here for clarity.
  */
-object FourMcBlockPlanner {
-
-  import com.fing.compression.fourmc.FourMcBlockIndex
-  import org.apache.spark.sql.execution.datasources.PartitionedFile
-
-  /**
-   * Expand a single PartitionedFile into multiple block-aligned slices.
-   * The first slice always starts at 0, so the reader does not skip the
-   * first line.  The final slice always ends at the file length to avoid
-   * losing the last line.  Each slice is limited in size by
-   * `maxPartitionBytes` (but always includes at least one block).
-   */
-  def expandPartitionedFile(
-      pf: PartitionedFile,
-      maxPartitionBytes: Long,
-      broadcastConf: Broadcast[SerializableConfiguration]
-  ): Seq[PartitionedFile] = {
-    val conf = broadcastConf.value.value
-    val path = new Path(pf.filePath)
-    val fs: FileSystem = path.getFileSystem(conf)
-    val fileLen = pf.length
-    val index = FourMcBlockIndex.readIndex(fs, path)
-    if (index == null || index.isEmpty) {
-      return Seq(pf.copy(start = 0L, length = fileLen))
-    }
-    val blocks = index.getNumberOfBlocks
-    val out = mutable.ArrayBuffer[PartitionedFile]()
-    var i = 0
-    while (i < blocks) {
-      val start = if (i == 0) 0L else index.getPosition(i)
-      var end = start
-      var acc = 0L
-      var j = i
-      while (j < blocks && (acc < maxPartitionBytes || j == i)) {
-        val cur = index.getPosition(j)
-        val next = if (j + 1 < blocks) index.getPosition(j + 1) else fileLen
-        acc += (next - cur)
-        end = next
-        j += 1
-      }
-      out += pf.copy(start = start, length = (end - start))
-      i = j
-    }
-    out
-  }
-}
+// Block and parallel planners moved under FourMcPlanning companion.
