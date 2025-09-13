@@ -23,7 +23,15 @@
 ## Commit & Pull Request Guidelines
 - Commits: concise, imperative subject (<72 chars), body explains motivation and impact.
 - PRs: include description, rationale, and user‑visible changes; link issues; add before/after snippets or screenshots where relevant.
- - CI parity: run `sbt compile` locally before requesting review; include validation steps. For subprojects, follow their AGENTS.md.
+- CI parity: run `sbt compile` locally before requesting review; include validation steps. For subprojects, follow their AGENTS.md.
+
+### Commit Trailers (Co-Authored-By)
+- Use a real line break for trailers; do not embed "\n" inside quotes.
+- New commit example:
+  - `git commit -m "Subject" -m "Body" -m "Co-Authored-By: Codex CLI"`
+- Amend last commit (preserve subject/body manually):
+  - `git commit --amend -m "Subject" -m "Body" -m "Co-Authored-By: Codex CLI"`
+  - Or interactively: `git commit --amend` and add `Co-Authored-By: Codex CLI` on a new line.
 
 ## Security & Configuration Tips
 - Dependencies marked `provided` (Spark) must be present at runtime. Ensure the 4mc codec is on the classpath when using the datasource.
