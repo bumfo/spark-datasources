@@ -32,10 +32,10 @@ import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
  * sequences; Spark will supply them via `withFilters` when necessary.
  */
 final class FourMcScanBuilder(
-                               spark: SparkSession,
-                               fileIndex: PartitioningAwareFileIndex,
-                               options: CaseInsensitiveStringMap
-                             ) extends ScanBuilder {
+    spark: SparkSession,
+    fileIndex: PartitioningAwareFileIndex,
+    options: CaseInsensitiveStringMap
+) extends ScanBuilder {
 
   // Determine whether to include the offset column.  We re-compute the data
   // schema accordingly when building the scan.
@@ -88,14 +88,14 @@ final class FourMcScanBuilder(
  * extends to the end of the file to read the last line.
  */
 final class FourMcScan(
-                        override val sparkSession: SparkSession,
-                        override val fileIndex: PartitioningAwareFileIndex,
-                        override val readDataSchema: StructType,
-                        options: CaseInsensitiveStringMap,
-                        override val readPartitionSchema: StructType,
-                        override val partitionFilters: Seq[Expression],
-                        override val dataFilters: Seq[Expression]
-                      ) extends FileScan with Batch {
+    override val sparkSession: SparkSession,
+    override val fileIndex: PartitioningAwareFileIndex,
+    override val readDataSchema: StructType,
+    options: CaseInsensitiveStringMap,
+    override val readPartitionSchema: StructType,
+    override val partitionFilters: Seq[Expression],
+    override val dataFilters: Seq[Expression]
+) extends FileScan with Batch {
 
   // Broadcast the Hadoop configuration so that executors can construct
   // FileSystem and FourMcLineRecordReader instances without serializing
@@ -109,8 +109,6 @@ final class FourMcScan(
 
   // Match FileScan's case-sensitivity and name normalization logic
   private val isCaseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis
-
-  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /**
    * Human-readable description used in the query plan.  This appears in the
@@ -169,6 +167,8 @@ final class FourMcScan(
     FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
   }
 
+  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
+
   /**
    * Provide a reader factory that will create readers per input partition.  A
    * slice may consist of multiple adjacent blocks (planned by
@@ -187,9 +187,9 @@ final class FourMcScan(
    * options and schemas remain unchanged.
    */
   override def withFilters(
-                            partitionFilters: Seq[Expression],
-                            dataFilters: Seq[Expression]
-                          ): FileScan = {
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]
+  ): FileScan = {
     new FourMcScan(
       sparkSession,
       fileIndex,
@@ -219,10 +219,10 @@ object FourMcBlockPlanner {
    * `maxPartitionBytes` (but always includes at least one block).
    */
   def expandPartitionedFile(
-                             pf: PartitionedFile,
-                             maxPartitionBytes: Long,
-                             broadcastConf: Broadcast[SerializableConfiguration]
-                           ): Seq[PartitionedFile] = {
+      pf: PartitionedFile,
+      maxPartitionBytes: Long,
+      broadcastConf: Broadcast[SerializableConfiguration]
+  ): Seq[PartitionedFile] = {
     val conf = broadcastConf.value.value
     val path = new Path(pf.filePath)
     val fs: FileSystem = path.getFileSystem(conf)
