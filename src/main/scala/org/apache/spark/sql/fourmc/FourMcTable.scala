@@ -25,13 +25,13 @@ import scala.collection.JavaConverters._
  * @param userSpecifiedSchema optional user-provided schema
  * @param fallbackFileFormat  v1 fallback (unused for reading but required by FileTable)
  */
-final case class FourMcTable(
-    name: String,
-    sparkSession: SparkSession,
-    options: CaseInsensitiveStringMap,
-    paths: Seq[String],
-    userSpecifiedSchema: Option[StructType],
-    fallbackFileFormat: Class[_ <: FileFormat]
+class FourMcTable(
+    val name: String,
+    val sparkSession: SparkSession,
+    val options: CaseInsensitiveStringMap,
+    val paths: Seq[String],
+    val userSpecifiedSchema: Option[StructType],
+    val fallbackFileFormat: Class[_ <: FileFormat]
 ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
 
   /**
@@ -39,8 +39,10 @@ final case class FourMcTable(
    * partitions based on the 4mc footer block index and create readers
    * accordingly.
    */
-  private lazy val cachedScanBuilder: FourMcScanBuilder =
+  protected def buildScanBuilder(): FourMcScanBuilder =
     new FourMcScanBuilder(sparkSession, fileIndex, options)
+
+  private lazy val cachedScanBuilder: FourMcScanBuilder = buildScanBuilder()
 
   override def newScanBuilder(options: CaseInsensitiveStringMap): FourMcScanBuilder = {
     // Sanity check: warn if options differ from the cached builder's options.
@@ -86,10 +88,12 @@ final case class FourMcTable(
    * types (e.g., String, Int, Long) and user-defined types that reduce to
    * atomic types.
    */
+  override final def supportsDataType(dataType: DataType): Boolean = supportsDataType0(dataType)
+
   @tailrec
-  override def supportsDataType(dataType: DataType): Boolean = dataType match {
+  private final def supportsDataType0(dataType: DataType): Boolean = dataType match {
     case _: AtomicType => true
-    case udt: UserDefinedType[_] => supportsDataType(udt.sqlType)
+    case udt: UserDefinedType[_] => supportsDataType0(udt.sqlType)
     case _ => false
   }
 
@@ -99,4 +103,15 @@ final case class FourMcTable(
   override def formatName: String = "4MC"
 
   override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = throw new NotImplementedError("Only support read")
+}
+
+object FourMcTable {
+  def apply(
+      name: String,
+      sparkSession: SparkSession,
+      options: CaseInsensitiveStringMap,
+      paths: Seq[String],
+      userSpecifiedSchema: Option[StructType],
+      fallbackFileFormat: Class[_ <: FileFormat]
+  ): FourMcTable = new FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat)
 }

@@ -33,7 +33,7 @@ import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
  * partition columns.  Partition and data filters are initialized to empty
  * sequences; Spark will supply them via `withFilters` when necessary.
  */
-final class FourMcScanBuilder(
+class FourMcScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     val options: CaseInsensitiveStringMap
@@ -89,7 +89,7 @@ final class FourMcScanBuilder(
  * at offset 0L to prevent dropping the first line, and the final slice
  * extends to the end of the file to read the last line.
  */
-final class FourMcScan(
+class FourMcScan(
     override val sparkSession: SparkSession,
     override val fileIndex: PartitioningAwareFileIndex,
     override val readDataSchema: StructType,
