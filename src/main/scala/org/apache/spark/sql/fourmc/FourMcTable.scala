@@ -3,11 +3,10 @@ package org.apache.spark.sql.fourmc
 import org.apache.hadoop.fs.FileStatus
 import org.apache.spark.internal.Logging
 import org.apache.spark.sql.SparkSession
-import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, WriteBuilder}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileTable
-import org.apache.spark.sql.types.{AtomicType, DataType, StructType, UserDefinedType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 import scala.annotation.tailrec
@@ -78,9 +77,8 @@ final case class FourMcTable(
    * schema was specified when the table was created, return it; otherwise
    * return None to use the default text schema.
    */
-  override def inferSchema(files: Seq[FileStatus]): Option[StructType] = {
-    userSpecifiedSchema
-  }
+  override def inferSchema(files: Seq[FileStatus]): Option[StructType] =
+    userSpecifiedSchema.orElse(Some(StructType(Array(StructField("value", StringType)))))
 
   /**
    * Determine whether a data type is supported for writing.  Since this
