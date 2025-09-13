@@ -8,6 +8,8 @@ import org.apache.spark.sql.execution.datasources.v2.FileTable
 import org.apache.spark.sql.types.{AtomicType, DataType, StructType, UserDefinedType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
+import scala.annotation.tailrec
+
 /**
  * A concrete FileTable for reading 4mc-compressed files.  This mirrors Spark's
  * built-in CSVTable implementation by extending [[FileTable]] and wiring a
@@ -61,6 +63,7 @@ final case class FourMcTable(
    * types (e.g., String, Int, Long) and user-defined types that reduce to
    * atomic types.
    */
+  @tailrec
   override def supportsDataType(dataType: DataType): Boolean = dataType match {
     case _: AtomicType => true
     case udt: UserDefinedType[_] => supportsDataType(udt.sqlType)
@@ -72,5 +75,5 @@ final case class FourMcTable(
    */
   override def formatName: String = "4MC"
 
-  override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = ???
+  override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = throw new NotImplementedError("Only support read")
 }

@@ -2,7 +2,7 @@ package org.apache.spark.sql.fourmc
 
 import java.util.Locale
 
-import org.apache.spark.sql.{SparkSession}
+import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.execution.datasources.v2.FileDataSourceV2
 import org.apache.spark.sql.execution.datasources.FileFormat
@@ -55,7 +55,7 @@ class FourMcFileDataSource
       val trimmed = p.trim
       if (trimmed.nonEmpty) paths += trimmed
     }
-    paths.distinct.toSeq
+    paths.distinct
   }
 
   /**

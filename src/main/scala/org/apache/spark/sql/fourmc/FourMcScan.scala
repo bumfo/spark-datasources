@@ -221,6 +221,6 @@ object FourMcBlockPlanner {
       out += pf.copy(start = start, length = (end - start))
       i = j
     }
-    out.toSeq
+    out
   }
 }

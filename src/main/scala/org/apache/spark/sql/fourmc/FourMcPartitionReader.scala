@@ -14,8 +14,9 @@ import org.apache.spark.sql.execution.datasources.PartitionedFile
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.util.SerializableConfiguration
 import org.apache.spark.unsafe.types.UTF8String
-
 import com.fing.mapreduce.FourMcLineRecordReader
+
+import scala.annotation.tailrec
 
 /**
  * Factory for creating readers of 4mc block-aligned partitions.  We group
@@ -65,6 +66,7 @@ final class FourMcMultiSliceReader(
     }
   }
 
+  @tailrec
   override def next(): Boolean = {
     // If current slice is null, try to open the next
     if (current == null) {
