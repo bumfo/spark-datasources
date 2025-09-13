@@ -1,6 +1,5 @@
 package org.apache.spark.sql.fourmc
 
-import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap

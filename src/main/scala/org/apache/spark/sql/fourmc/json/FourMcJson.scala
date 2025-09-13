@@ -7,7 +7,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JacksonParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.fourmc.{FourMcScan, FourMcScanBuilder, FourMcTable, FourMcSchemaAwareDataSource}
+import org.apache.spark.sql.fourmc.{FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcTable}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -121,7 +121,9 @@ final class FourMcJsonMultiSliceReader(
       idx += 1
     }
     if (current.next()) true else {
-      current.close(); current = null; next()
+      current.close();
+      current = null;
+      next()
     }
   }
 
@@ -152,7 +154,8 @@ final class FourMcJsonSliceReader(
       val rows = parser.parse[UTF8String](v, CreateJacksonParser.utf8String, identity)
       val it = rows.iterator
       if (it.hasNext) {
-        current = it.next(); return true
+        current = it.next();
+        return true
       }
     }
     false
