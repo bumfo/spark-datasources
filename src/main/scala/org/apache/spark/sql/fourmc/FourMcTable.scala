@@ -2,6 +2,7 @@ package org.apache.spark.sql.fourmc
 
 import org.apache.hadoop.fs.FileStatus
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.internal.Logging
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, WriteBuilder}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileTable
@@ -9,6 +10,7 @@ import org.apache.spark.sql.types.{AtomicType, DataType, StructType, UserDefined
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 import scala.annotation.tailrec
+import scala.collection.JavaConverters._
 
 /**
  * A concrete FileTable for reading 4mc-compressed files.  This mirrors Spark's
@@ -30,21 +32,43 @@ final case class FourMcTable(
                               paths: Seq[String],
                               userSpecifiedSchema: Option[StructType],
                               fallbackFileFormat: Class[_ <: FileFormat]
-                            ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) {
+                            ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
 
   /**
    * Build a custom scan for this table.  The returned builder will plan
    * partitions based on the 4mc footer block index and create readers
    * accordingly.
    */
-  override def newScanBuilder(options: CaseInsensitiveStringMap): FourMcScanBuilder = {
-    // Pass the partitioning-aware file index to the scan builder.  Spark's
-    // FileTable exposes the file index as a PartitioningAwareFileIndex, which
-    // retains information about partition columns.  We also forward the
-    // remaining options to the builder; the builder will compute the read
-    // schema based on the `withOffset` flag and fetch the partition schema
-    // from the index.
+  private lazy val cachedScanBuilder: FourMcScanBuilder =
     new FourMcScanBuilder(sparkSession, fileIndex, options)
+
+  override def newScanBuilder(options: CaseInsensitiveStringMap): FourMcScanBuilder = {
+    // Sanity check: warn if options differ from the cached builder's options.
+    try {
+      val before = cachedScanBuilder.options
+      val beforeMap = before.entrySet().asScala.map(e => e.getKey -> e.getValue).toMap
+      val afterMap = options.entrySet().asScala.map(e => e.getKey -> e.getValue).toMap
+      val allKeys = beforeMap.keySet ++ afterMap.keySet
+      val diffs = allKeys.flatMap { k =>
+        val oldV = beforeMap.getOrElse(k, null)
+        val newV = afterMap.getOrElse(k, null)
+        val ov = Option(oldV).getOrElse("")
+        val nv = Option(newV).getOrElse("")
+        if (ov != nv) Some(k -> (ov, nv)) else None
+      }
+      if (diffs.nonEmpty) {
+        logWarning("fourmc: newScanBuilder called with changed options; reusing cached builder. Changed entries:")
+        diffs.toSeq.sortBy(_._1).foreach { case (k, (ov, nv)) =>
+          val ovStr = if (ov.nonEmpty) ov else "<unset>"
+          val nvStr = if (nv.nonEmpty) nv else "<unset>"
+          logWarning(s"  $k: old=$ovStr new=$nvStr")
+        }
+      }
+    } catch {
+      case _: Throwable => // be best-effort about logging
+    }
+    // Options are assumed stable for the lifetime of this table; reuse builder.
+    cachedScanBuilder
   }
 
   /**

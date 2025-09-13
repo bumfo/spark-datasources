@@ -4,7 +4,7 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.connector.read.{Batch, PartitionReaderFactory, Scan, ScanBuilder}
+import org.apache.spark.sql.connector.read._
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
@@ -36,7 +36,7 @@ import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
 final class FourMcScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
-    options: CaseInsensitiveStringMap
+    val options: CaseInsensitiveStringMap
 ) extends ScanBuilder {
 
   // Determine whether to include the offset column.  We re-compute the data
@@ -46,7 +46,7 @@ final class FourMcScanBuilder(
 
   import org.apache.spark.sql.types.{LongType, StringType, StructField}
 
-  override def build(): Scan = {
+  override lazy val build: Scan = {
     val resolvedSchema = if (withOffset) {
       // When the offset column is requested, return a two-column schema:
       // (offset LONG, value STRING).
@@ -141,7 +141,7 @@ final class FourMcScan(
    * footer index, then coalesce those slices back into FilePartitions using
    * Spark's helper to balance task sizes.
    */
-  override def partitions: Seq[FilePartition] = {
+  override lazy val planInputPartitions: Array[InputPartition] = {
     // This inlines FileScan.partitions and replaces file splitting with 4mc-aware expansion.
     val selectedPartitions = fileIndex.listFiles(partitionFilters, dataFilters)
     val maxSplitBytes = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
@@ -217,7 +217,7 @@ final class FourMcScan(
       }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     }
 
-    FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
+    FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes).toArray
   }
 
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
