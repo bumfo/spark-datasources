@@ -26,13 +26,13 @@ import scala.collection.JavaConverters._
  * @param fallbackFileFormat  v1 fallback (unused for reading but required by FileTable)
  */
 final case class FourMcTable(
-                              name: String,
-                              sparkSession: SparkSession,
-                              options: CaseInsensitiveStringMap,
-                              paths: Seq[String],
-                              userSpecifiedSchema: Option[StructType],
-                              fallbackFileFormat: Class[_ <: FileFormat]
-                            ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
+    name: String,
+    sparkSession: SparkSession,
+    options: CaseInsensitiveStringMap,
+    paths: Seq[String],
+    userSpecifiedSchema: Option[StructType],
+    fallbackFileFormat: Class[_ <: FileFormat]
+) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
 
   /**
    * Build a custom scan for this table.  The returned builder will plan
