@@ -27,7 +27,7 @@ object FourMcParallelPlanner {
     val slices = rdd.mapPartitions { iter =>
       iter.flatMap { case (path, len) =>
         // Use empty partition values and hosts; they're reconstructed on the driver
-        val base = PartitionedFile(InternalRow.empty, path, 0L, len, Array.empty[String])
+        val base = PartitionedFile(InternalRow(Array.empty), path, 0L, len, Array.empty[String])
         FourMcBlockPlanner
           .expandPartitionedFile(base, maxSplitBytes, confBroadcast)
           .map(pf => Slice(pf.filePath, pf.start, pf.length))
