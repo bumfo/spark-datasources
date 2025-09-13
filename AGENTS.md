@@ -41,3 +41,12 @@
 - Inlining policy: only inline functions the user explicitly asks for, or short private helpers that cannot be called directly.
 - Prefer reusing existing Spark/Hadoop APIs over copying code.
 - Always ask before inlining a large piece of code.
+- Never force-remove Git lock files (e.g., `.git/index.lock`) before committing; surface the error and ask for guidance.
+
+### Referencing Spark 3.2.1 Sources
+- Find file paths in the Spark SQL sources JAR:
+  - `jar tf ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar | grep FileScan.scala`
+  - Similarly search for `PartitionedFileUtil.scala`, `FilePartition.scala`.
+- Print a source file to the terminal:
+  - `unzip -p ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar org/apache/spark/sql/execution/datasources/v2/FileScan.scala | sed -n '1,200p'`
+- Tip: use `rg` instead of `grep` if available for faster search.
