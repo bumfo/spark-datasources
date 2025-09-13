@@ -279,7 +279,7 @@ object FourMcBlockPlanner {
     val conf = broadcastConf.value.value
     val path = new Path(pf.filePath)
     val fs: FileSystem = path.getFileSystem(conf)
-    val fileLen = fs.getFileStatus(path).getLen
+    val fileLen = pf.length
     val index = FourMcBlockIndex.readIndex(fs, path)
     if (index == null || index.isEmpty) {
       return Seq(pf.copy(start = 0L, length = fileLen))
