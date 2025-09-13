@@ -1,7 +1,8 @@
 package org.apache.spark.sql.fourmc
 
-import org.apache.hadoop.fs.Path
-import org.apache.hadoop.fs.FileSystem
+import java.util.Locale
+import org.apache.hadoop.fs.{Path, FileSystem, FileStatus, LocatedFileStatus, BlockLocation}
+import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory, Scan, ScanBuilder}
@@ -107,6 +108,10 @@ final class FourMcScan(
   // Maximum bytes per partition used when expanding 4mc block slices.
   private val maxPartitionBytes: Long = sparkSession.sessionState.conf.filesMaxPartitionBytes
 
+  // Match FileScan's case-sensitivity and name normalization logic
+  private val isCaseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis
+  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
+
   /**
    * Human-readable description used in the query plan.  This appears in the
    * physical plan and helps users understand that a 4mc-specific scan is
@@ -121,25 +126,57 @@ final class FourMcScan(
   override def toBatch: Batch = this
 
   /**
-   * Plan input partitions.  Spark uses the file index to produce a set of
-   * FilePartitions whose PartitionedFiles may span multiple 4mc blocks.  We
-   * expand each PartitionedFile into one or more block-aligned slices using
-   * the 4mc footer index.  After expansion, we coalesce slices back into
-   * FilePartitions using Spark's helper to balance the number of tasks.  This
-   * method leverages Spark's distributed file discovery and partition pruning
-   * and only applies 4mc-specific logic afterwards.
+   * Override FileScan.partitions to apply 4mc block-aware expansion before
+   * Spark converts partitions into input partitions. We expand each
+   * PartitionedFile into one or more block-aligned slices using the 4mc
+   * footer index, then coalesce those slices back into FilePartitions using
+   * Spark's helper to balance task sizes.
    */
-  override def planInputPartitions(): Array[InputPartition] = {
-    val planned = super.planInputPartitions().asInstanceOf[Array[FilePartition]]
-    val expandedSlices = planned.iterator.flatMap { fp =>
-      fp.files.iterator.flatMap { pf =>
-        FourMcBlockPlanner.expandPartitionedFile(pf, maxPartitionBytes, broadcastConf)
+  override def partitions: Seq[FilePartition] = {
+    // This inlines FileScan.partitions and replaces file splitting with 4mc-aware expansion.
+    val selectedPartitions = fileIndex.listFiles(partitionFilters, dataFilters)
+    val maxSplitBytes = FilePartition.maxSplitBytes(sparkSession, selectedPartitions)
+
+    val partitionAttributes = fileIndex.partitionSchema.toAttributes
+    val attributeMap = partitionAttributes.map(a => normalizeName(a.name) -> a).toMap
+    val readPartitionAttributes = readPartitionSchema.map { readField =>
+      attributeMap.get(normalizeName(readField.name)).getOrElse {
+        throw org.apache.spark.sql.errors.QueryCompilationErrors
+          .cannotFindPartitionColumnInPartitionSchemaError(readField, fileIndex.partitionSchema)
       }
-    }.toSeq
-    // Re-group expanded slices back into FilePartitions.  This prevents
-    // generating too many tiny tasks when many small slices are produced.
-    FilePartition.getFilePartitions(sparkSession, expandedSlices, maxPartitionBytes)
-      .asInstanceOf[Array[InputPartition]]
+    }
+    lazy val partitionValueProject =
+      org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
+        .generate(readPartitionAttributes, partitionAttributes)
+
+    val conf = broadcastConf.value.value
+    val splitFiles = selectedPartitions.flatMap { partition =>
+      // Prune partition values if part of the partition columns are not required.
+      val partitionValues = if (readPartitionAttributes != partitionAttributes) {
+        partitionValueProject(partition.values).copy()
+      } else {
+        partition.values
+      }
+      partition.files.flatMap { file =>
+        val filePath = file.getPath
+        // Build a single PartitionedFile for the whole file (with proper hosts)
+        val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
+        // Expand it into 4mc block-aligned slices using the helper
+        FourMcBlockPlanner
+          .expandPartitionedFile(base, maxSplitBytes, broadcastConf)
+      }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+    }
+
+    if (splitFiles.length == 1) {
+      val path = new Path(splitFiles(0).filePath)
+      if (!isSplitable(path) && splitFiles(0).length >
+        sparkSession.sparkContext.getConf.get(org.apache.spark.internal.config.IO_WARNING_LARGEFILETHRESHOLD)) {
+        logWarning(s"Loading one large unsplittable file ${path.toString} with only one " +
+          s"partition, the reason is: ${getFileUnSplittableReason(path)}")
+      }
+    }
+
+    FilePartition.getFilePartitions(sparkSession, splitFiles, maxSplitBytes)
   }
 
   /**
