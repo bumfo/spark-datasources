@@ -8,7 +8,6 @@ import org.apache.spark.sql.catalyst.csv.{CSVOptions, UnivocityParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.fourmc._
-import org.apache.spark.sql.fourmc.FourMcSchemaAwareDataSource
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -121,7 +120,9 @@ final class FourMcCsvMultiSliceReader(
       idx += 1
     }
     if (current.next()) true else {
-      current.close(); current = null; next()
+      current.close();
+      current = null;
+      next()
     }
   }
 
@@ -160,7 +161,8 @@ final class FourMcCsvSliceReader(
       val v = delegate.get().getUTF8String(0).toString
       val parsed = parser.parse(v)
       if (parsed.isDefined) {
-        current = parsed.get; return true
+        current = parsed.get;
+        return true
       }
     }
     false
