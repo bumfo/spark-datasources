@@ -1,5 +1,6 @@
 package org.apache.spark.sql.fourmc
 
+import java.util.Locale
 import org.apache.hadoop.fs.{Path, FileSystem, FileStatus, LocatedFileStatus, BlockLocation}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
@@ -106,6 +107,10 @@ final class FourMcScan(
   // Maximum bytes per partition used when expanding 4mc block slices.
   private val maxPartitionBytes: Long = sparkSession.sessionState.conf.filesMaxPartitionBytes
 
+  // Match FileScan's case-sensitivity and name normalization logic
+  private val isCaseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis
+  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
+
   /**
    * Human-readable description used in the query plan.  This appears in the
    * physical plan and helps users understand that a 4mc-specific scan is
@@ -135,7 +140,7 @@ final class FourMcScan(
     val attributeMap = partitionAttributes.map(a => normalizeName(a.name) -> a).toMap
     val readPartitionAttributes = readPartitionSchema.map { readField =>
       attributeMap.get(normalizeName(readField.name)).getOrElse {
-        org.apache.spark.sql.errors.QueryCompilationErrors
+        throw org.apache.spark.sql.errors.QueryCompilationErrors
           .cannotFindPartitionColumnInPartitionSchemaError(readField, fileIndex.partitionSchema)
       }
     }
