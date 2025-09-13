@@ -121,25 +121,21 @@ final class FourMcScan(
   override def toBatch: Batch = this
 
   /**
-   * Plan input partitions.  Spark uses the file index to produce a set of
-   * FilePartitions whose PartitionedFiles may span multiple 4mc blocks.  We
-   * expand each PartitionedFile into one or more block-aligned slices using
-   * the 4mc footer index.  After expansion, we coalesce slices back into
-   * FilePartitions using Spark's helper to balance the number of tasks.  This
-   * method leverages Spark's distributed file discovery and partition pruning
-   * and only applies 4mc-specific logic afterwards.
+   * Override FileScan.partitions to apply 4mc block-aware expansion before
+   * Spark converts partitions into input partitions. We expand each
+   * PartitionedFile into one or more block-aligned slices using the 4mc
+   * footer index, then coalesce those slices back into FilePartitions using
+   * Spark's helper to balance task sizes.
    */
-  override def planInputPartitions(): Array[InputPartition] = {
-    val planned = super.planInputPartitions().asInstanceOf[Array[FilePartition]]
+  override def partitions: Seq[FilePartition] = {
+    val planned: Seq[FilePartition] = super.partitions
     val expandedSlices = planned.iterator.flatMap { fp =>
       fp.files.iterator.flatMap { pf =>
         FourMcBlockPlanner.expandPartitionedFile(pf, maxPartitionBytes, broadcastConf)
       }
     }.toSeq
-    // Re-group expanded slices back into FilePartitions.  This prevents
-    // generating too many tiny tasks when many small slices are produced.
+    // Re-group expanded slices back into FilePartitions to avoid tiny tasks.
     FilePartition.getFilePartitions(sparkSession, expandedSlices, maxPartitionBytes)
-      .asInstanceOf[Array[InputPartition]]
   }
 
   /**
