@@ -2,6 +2,7 @@ package org.apache.spark.sql.fourmc
 
 import java.util.Locale
 import org.apache.hadoop.fs.{Path, FileSystem, FileStatus, LocatedFileStatus, BlockLocation}
+import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.read.{Batch, InputPartition, PartitionReaderFactory, Scan, ScanBuilder}
@@ -148,23 +149,6 @@ final class FourMcScan(
       org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
         .generate(readPartitionAttributes, partitionAttributes)
 
-    // Helpers to compute block hosts for a (offset, length) slice
-    def getBlockLocations(file: FileStatus): Array[BlockLocation] = file match {
-      case f: LocatedFileStatus => f.getBlockLocations
-      case _ => Array.empty[BlockLocation]
-    }
-    def getBlockHosts(blockLocations: Array[BlockLocation], offset: Long, length: Long): Array[String] = {
-      val candidates = blockLocations.map { b =>
-        val bStart = b.getOffset
-        val bEnd = b.getOffset + b.getLength
-        val sStart = offset
-        val sEnd = offset + length
-        val overlap = math.max(0L, math.min(bEnd, sEnd) - math.max(bStart, sStart))
-        b.getHosts -> overlap
-      }.filter(_._2 > 0L)
-      if (candidates.isEmpty) Array.empty[String] else candidates.maxBy(_._2)._1
-    }
-
     val conf = broadcastConf.value.value
     val splitFiles = selectedPartitions.flatMap { partition =>
       // Prune partition values if part of the partition columns are not required.
@@ -175,37 +159,11 @@ final class FourMcScan(
       }
       partition.files.flatMap { file =>
         val filePath = file.getPath
-        val fs: FileSystem = filePath.getFileSystem(conf)
-        val fileLen = file.getLen
-        val blockLocs = getBlockLocations(file)
-
-        val index = com.fing.compression.fourmc.FourMcBlockIndex.readIndex(fs, filePath)
-        if (index == null || index.isEmpty) {
-          val hosts = getBlockHosts(blockLocs, 0L, fileLen)
-          Seq(PartitionedFile(partitionValues, filePath.toUri.toString, 0L, fileLen, hosts))
-        } else {
-          val blocks = index.getNumberOfBlocks
-          val out = scala.collection.mutable.ArrayBuffer[PartitionedFile]()
-          var i = 0
-          while (i < blocks) {
-            val start = if (i == 0) 0L else index.getPosition(i)
-            var end = start
-            var acc = 0L
-            var j = i
-            while (j < blocks && (acc < maxSplitBytes || j == i)) {
-              val cur = index.getPosition(j)
-              val next = if (j + 1 < blocks) index.getPosition(j + 1) else fileLen
-              acc += (next - cur)
-              end = next
-              j += 1
-            }
-            val length = end - start
-            val hosts = getBlockHosts(blockLocs, start, length)
-            out += PartitionedFile(partitionValues, filePath.toUri.toString, start, length, hosts)
-            i = j
-          }
-          out.toSeq
-        }
+        // Build a single PartitionedFile for the whole file (with proper hosts)
+        val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
+        // Expand it into 4mc block-aligned slices using the helper
+        FourMcBlockPlanner
+          .expandPartitionedFile(base, maxSplitBytes, broadcastConf)
       }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     }
 
