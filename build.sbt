@@ -6,6 +6,8 @@ lazy val sparkVersion = "3.2.1"
 
 libraryDependencies ++= Seq(
   "org.apache.spark" %% "spark-sql" % sparkVersion % "provided",
+  // Protobuf functions backport for Spark 3.2.1 (shaded)
+  "com.example" %% "spark-protobuf-backport-shaded" % "0.1.0-SNAPSHOT",
   //  "com.github.fingltd" % "hadoop-4mc" % "3.0.0"
 )
 
