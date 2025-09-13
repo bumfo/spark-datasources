@@ -48,7 +48,7 @@ final case class FourMcTable(
       val before = cachedScanBuilder.options
       val beforeMap = before.entrySet().asScala.map(e => e.getKey -> e.getValue).toMap
       val afterMap = options.entrySet().asScala.map(e => e.getKey -> e.getValue).toMap
-      val allKeys = beforeMap.keySet ++ afterMap.keySet
+      val allKeys = (beforeMap.keySet ++ afterMap.keySet) - "path"
       val diffs = allKeys.flatMap { k =>
         val oldV = beforeMap.getOrElse(k, null)
         val newV = afterMap.getOrElse(k, null)
