@@ -1,4 +1,4 @@
-package com.example.fourmc.datasource
+package org.apache.spark.sql.fourmc
 
 import org.apache.hadoop.fs.Path
 import org.apache.hadoop.fs.FileSystem
@@ -95,14 +95,7 @@ final class FourMcScan(
     override val readPartitionSchema: StructType,
     override val partitionFilters: Seq[Expression],
     override val dataFilters: Seq[Expression]
-) extends FileScan(
-      sparkSession,
-      fileIndex,
-      /* dataSchema       */ readDataSchema,
-      /* readDataSchema   */ readDataSchema,
-      /* readPartitionSchema */ readPartitionSchema,
-      options
-    ) with Batch {
+) extends FileScan with Batch {
 
   // Broadcast the Hadoop configuration so that executors can construct
   // FileSystem and FourMcLineRecordReader instances without serializing
@@ -145,7 +138,7 @@ final class FourMcScan(
     }.toSeq
     // Re-group expanded slices back into FilePartitions.  This prevents
     // generating too many tiny tasks when many small slices are produced.
-    FilePartition.getFilePartitions(sparkSession.sessionState.conf, expandedSlices)
+    FilePartition.getFilePartitions(sparkSession, expandedSlices, maxPartitionBytes)
       .asInstanceOf[Array[InputPartition]]
   }
 

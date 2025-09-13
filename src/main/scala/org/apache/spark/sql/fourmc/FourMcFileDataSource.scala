@@ -1,4 +1,4 @@
-package com.example.fourmc.datasource
+package org.apache.spark.sql.fourmc
 
 import java.util.Locale
 

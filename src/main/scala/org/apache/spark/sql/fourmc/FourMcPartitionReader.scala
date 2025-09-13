@@ -1,4 +1,4 @@
-package com.example.fourmc.datasource
+package org.apache.spark.sql.fourmc
 
 import org.apache.hadoop.conf.Configuration
 import org.apache.hadoop.fs.Path

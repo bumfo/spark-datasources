@@ -1,8 +1,8 @@
-package com.example.fourmc.datasource
+package org.apache.spark.sql.fourmc
 
-import scala.collection.JavaConverters._
 import org.apache.hadoop.fs.FileStatus
 import org.apache.spark.sql.SparkSession
+import org.apache.spark.sql.connector.write.{LogicalWriteInfo, WriteBuilder}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileTable
 import org.apache.spark.sql.types.{AtomicType, DataType, StructType, UserDefinedType}
@@ -14,21 +14,21 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
  * custom scan builder.  It supports optional user-specified schemas and
  * delegates block-aligned split planning to the underlying scan.
  *
- * @param name logical name of the table (typically derived from paths)
- * @param sparkSession active Spark session
- * @param options options without the `path`/`paths` keys
- * @param paths list of input paths supplied via `path` or `paths`
+ * @param name                logical name of the table (typically derived from paths)
+ * @param sparkSession        active Spark session
+ * @param options             options without the `path`/`paths` keys
+ * @param paths               list of input paths supplied via `path` or `paths`
  * @param userSpecifiedSchema optional user-provided schema
- * @param fallbackFileFormat v1 fallback (unused for reading but required by FileTable)
+ * @param fallbackFileFormat  v1 fallback (unused for reading but required by FileTable)
  */
 final case class FourMcTable(
-    name: String,
-    sparkSession: SparkSession,
-    options: CaseInsensitiveStringMap,
-    paths: Seq[String],
-    userSpecifiedSchema: Option[StructType],
-    fallbackFileFormat: Class[_ <: FileFormat]
-) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) {
+                              name: String,
+                              sparkSession: SparkSession,
+                              options: CaseInsensitiveStringMap,
+                              paths: Seq[String],
+                              userSpecifiedSchema: Option[StructType],
+                              fallbackFileFormat: Class[_ <: FileFormat]
+                            ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) {
 
   /**
    * Build a custom scan for this table.  The returned builder will plan
@@ -71,4 +71,6 @@ final case class FourMcTable(
    * Human-friendly name for this format.  Used in error messages.
    */
   override def formatName: String = "4MC"
+
+  override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = ???
 }
