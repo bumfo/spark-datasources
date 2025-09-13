@@ -12,7 +12,7 @@
 
 ## Coding Style & Naming Conventions
 - Scala 2.12, Spark 3.2.1. Prefer 2‑space indentation; max line ~100 chars.
-- Packages: keep `com.example.fourmc.datasource` for 4mc sources.
+- Packages: keep `org.apache.spark.sql.fourmc` for 4mc sources.
 - Names: classes/objects `UpperCamelCase`, methods/vals `camelCase`, constants `UPPER_SNAKE_CASE`.
 - Imports: group stdlib/third‑party/project; avoid wildcard imports except Spark implicits.
 - No formatter is enforced; mirror existing style in edited files.
