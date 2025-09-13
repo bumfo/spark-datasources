@@ -5,10 +5,9 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JacksonParser}
-import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.fourmc.{FourMcFileDataSource, FourMcScan, FourMcScanBuilder, FourMcTable}
+import org.apache.spark.sql.fourmc.{FourMcScan, FourMcScanBuilder, FourMcTable, FourMcSchemaAwareDataSource}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -19,38 +18,21 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
 /** DataSource short name fourmc.json */
-final class FourMcJsonFileDataSource extends FourMcFileDataSource {
+final class FourMcJsonFileDataSource extends FourMcSchemaAwareDataSource {
   override def shortName(): String = "fourmc.json"
 
-  override def getTable(options: CaseInsensitiveStringMap): Table = {
-    val paths = parsePaths(options)
-    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.json datasource")
-    val cleaned = dropPathOptions(options)
-    val tableName = computeTableName(paths)
+  override protected def createTable(
+      tableName: String,
+      options: CaseInsensitiveStringMap,
+      paths: Seq[String],
+      userSpecifiedSchema: Option[StructType]) =
     new FourMcJsonTable(
       name = tableName,
       sparkSession = SparkSession.active,
-      options = cleaned,
+      options = options,
       paths = paths,
-      userSpecifiedSchema = None,
-      fallbackFileFormat = fallbackFileFormat
-    )
-  }
-
-  override def getTable(options: CaseInsensitiveStringMap, schema: StructType): Table = {
-    val paths = parsePaths(options)
-    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.json datasource")
-    val cleaned = dropPathOptions(options)
-    val tableName = computeTableName(paths)
-    new FourMcJsonTable(
-      name = tableName,
-      sparkSession = SparkSession.active,
-      options = cleaned,
-      paths = paths,
-      userSpecifiedSchema = Some(schema),
-      fallbackFileFormat = fallbackFileFormat
-    )
-  }
+      userSpecifiedSchema = userSpecifiedSchema,
+      fallbackFileFormat = fallbackFileFormat)
 }
 
 class FourMcJsonTable(

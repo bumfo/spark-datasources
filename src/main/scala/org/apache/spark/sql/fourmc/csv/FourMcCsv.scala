@@ -5,10 +5,10 @@ import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, UnivocityParser}
-import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.fourmc._
+import org.apache.spark.sql.fourmc.FourMcSchemaAwareDataSource
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -18,38 +18,21 @@ import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
 /** DataSource short name fourmc.csv */
-final class FourMcCsvFileDataSource extends FourMcFileDataSource {
+final class FourMcCsvFileDataSource extends FourMcSchemaAwareDataSource {
   override def shortName(): String = "fourmc.csv"
 
-  override def getTable(options: CaseInsensitiveStringMap): Table = {
-    val paths = parsePaths(options)
-    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.csv datasource")
-    val cleaned = dropPathOptions(options)
-    val tableName = computeTableName(paths)
+  override protected def createTable(
+      tableName: String,
+      options: CaseInsensitiveStringMap,
+      paths: Seq[String],
+      userSpecifiedSchema: Option[StructType]) =
     new FourMcCsvTable(
       name = tableName,
       sparkSession = SparkSession.active,
-      options = cleaned,
+      options = options,
       paths = paths,
-      userSpecifiedSchema = None,
-      fallbackFileFormat = fallbackFileFormat
-    )
-  }
-
-  override def getTable(options: CaseInsensitiveStringMap, schema: StructType): Table = {
-    val paths = parsePaths(options)
-    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.csv datasource")
-    val cleaned = dropPathOptions(options)
-    val tableName = computeTableName(paths)
-    new FourMcCsvTable(
-      name = tableName,
-      sparkSession = SparkSession.active,
-      options = cleaned,
-      paths = paths,
-      userSpecifiedSchema = Some(schema),
-      fallbackFileFormat = fallbackFileFormat
-    )
-  }
+      userSpecifiedSchema = userSpecifiedSchema,
+      fallbackFileFormat = fallbackFileFormat)
 }
 
 class FourMcCsvTable(
