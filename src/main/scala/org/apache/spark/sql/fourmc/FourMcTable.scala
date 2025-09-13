@@ -6,10 +6,11 @@ import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.write.{LogicalWriteInfo, WriteBuilder}
 import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileTable
-import org.apache.spark.sql.types.{AtomicType, DataType, StructType, UserDefinedType}
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 
 import scala.annotation.tailrec
+import scala.collection.JavaConverters._
 
 /**
  * A concrete FileTable for reading 4mc-compressed files.  This mirrors Spark's
@@ -38,14 +39,36 @@ final case class FourMcTable(
    * partitions based on the 4mc footer block index and create readers
    * accordingly.
    */
-  override def newScanBuilder(options: CaseInsensitiveStringMap): FourMcScanBuilder = {
-    // Pass the partitioning-aware file index to the scan builder.  Spark's
-    // FileTable exposes the file index as a PartitioningAwareFileIndex, which
-    // retains information about partition columns.  We also forward the
-    // remaining options to the builder; the builder will compute the read
-    // schema based on the `withOffset` flag and fetch the partition schema
-    // from the index.
+  private lazy val cachedScanBuilder: FourMcScanBuilder =
     new FourMcScanBuilder(sparkSession, fileIndex, options)
+
+  override def newScanBuilder(options: CaseInsensitiveStringMap): FourMcScanBuilder = {
+    // Sanity check: warn if options differ from the cached builder's options.
+    try {
+      val before = cachedScanBuilder.options
+      val beforeMap = before.entrySet().asScala.map(e => e.getKey -> e.getValue).toMap
+      val afterMap = options.entrySet().asScala.map(e => e.getKey -> e.getValue).toMap
+      val allKeys = (beforeMap.keySet ++ afterMap.keySet) - "path"
+      val diffs = allKeys.flatMap { k =>
+        val oldV = beforeMap.getOrElse(k, null)
+        val newV = afterMap.getOrElse(k, null)
+        val ov = Option(oldV).getOrElse("")
+        val nv = Option(newV).getOrElse("")
+        if (ov != nv) Some(k -> (ov, nv)) else None
+      }
+      if (diffs.nonEmpty) {
+        logWarning("fourmc: newScanBuilder called with changed options; reusing cached builder. Changed entries:")
+        diffs.toSeq.sortBy(_._1).foreach { case (k, (ov, nv)) =>
+          val ovStr = if (ov.nonEmpty) ov else "<unset>"
+          val nvStr = if (nv.nonEmpty) nv else "<unset>"
+          logWarning(s"  $k: old=$ovStr new=$nvStr")
+        }
+      }
+    } catch {
+      case _: Throwable => // be best-effort about logging
+    }
+    // Options are assumed stable for the lifetime of this table; reuse builder.
+    cachedScanBuilder
   }
 
   /**
@@ -54,9 +77,8 @@ final case class FourMcTable(
    * schema was specified when the table was created, return it; otherwise
    * return None to use the default text schema.
    */
-  override def inferSchema(files: Seq[FileStatus]): Option[StructType] = {
-    userSpecifiedSchema
-  }
+  override def inferSchema(files: Seq[FileStatus]): Option[StructType] =
+    userSpecifiedSchema.orElse(Some(StructType(Array(StructField("value", StringType)))))
 
   /**
    * Determine whether a data type is supported for writing.  Since this
