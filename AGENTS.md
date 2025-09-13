@@ -41,7 +41,9 @@
 - Inlining policy: only inline functions the user explicitly asks for, or short private helpers that cannot be called directly.
 - Prefer reusing existing Spark/Hadoop APIs over copying code.
 - Always ask before inlining a large piece of code.
-- Never force-remove Git lock files (e.g., `.git/index.lock`) before committing; surface the error and ask for guidance.
+- If a stale Git lock prevents committing, remove it explicitly and retry:
+  - `rm -f .git/index.lock && git add <files> && git commit -m "..."`
+  - Use only when you’re sure no other Git process is running.
 
 ### Referencing Spark 3.2.1 Sources
 - Find file paths in the Spark SQL sources JAR:
