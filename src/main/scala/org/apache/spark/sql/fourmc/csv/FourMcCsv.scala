@@ -35,6 +35,21 @@ final class FourMcCsvFileDataSource extends FourMcFileDataSource {
       fallbackFileFormat = fallbackFileFormat
     )
   }
+
+  override def getTable(options: CaseInsensitiveStringMap, schema: StructType): Table = {
+    val paths = parsePaths(options)
+    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.csv datasource")
+    val cleaned = dropPathOptions(options)
+    val tableName = computeTableName(paths)
+    new FourMcCsvTable(
+      name = tableName,
+      sparkSession = SparkSession.active,
+      options = cleaned,
+      paths = paths,
+      userSpecifiedSchema = Some(schema),
+      fallbackFileFormat = fallbackFileFormat
+    )
+  }
 }
 
 class FourMcCsvTable(
@@ -46,25 +61,26 @@ class FourMcCsvTable(
     fallbackFileFormat: Class[_ <: org.apache.spark.sql.execution.datasources.FileFormat]
 ) extends FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat) {
   override protected def buildScanBuilder(): FourMcScanBuilder =
-    new FourMcCsvScanBuilder(sparkSession, fileIndex, options)
+    new FourMcCsvScanBuilder(sparkSession, fileIndex, options, schema)
+
+  override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
+    val parsed = new CSVOptions(
+      options.asScala.toMap,
+      columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
+      sparkSession.sessionState.conf.sessionLocalTimeZone
+    )
+    org.apache.spark.sql.execution.datasources.csv.CSVDataSource(parsed)
+      .inferSchema(sparkSession, files, parsed)
+  }
 }
 
 final class FourMcCsvScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
-    opts: CaseInsensitiveStringMap
+    opts: CaseInsensitiveStringMap,
+    readSchema: StructType
 ) extends FourMcScanBuilder(spark, fileIndex, opts) {
   override lazy val build: Scan = {
-    val withOffset: Boolean =
-      java.lang.Boolean.parseBoolean(options.getOrDefault("withOffset", "false"))
-    val readSchema = if (withOffset) {
-      StructType(Seq(
-        org.apache.spark.sql.types.StructField("offset", org.apache.spark.sql.types.LongType, nullable = false),
-        org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)
-      ))
-    } else {
-      StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)))
-    }
     val partitionSchema = fileIndex.partitionSchema
     new FourMcCsvScan(
       spark,
@@ -146,8 +162,17 @@ final class FourMcCsvSliceReader(
   private val csvOpts = new CSVOptions(options.asCaseSensitiveMap().asScala.toMap, columnPruning = true, SQLConf.get.sessionLocalTimeZone)
   private val parser = new UnivocityParser(dataSchema, csvOpts)
   private var current: InternalRow = _
+  private var headerSkipped = false
 
   override def next(): Boolean = {
+    // Drop header on the very first slice start of a file if requested
+    if (!headerSkipped && csvOpts.headerFlag && pf.start == 0L) {
+      // skip one record if present
+      if (delegate.next()) {
+        // discard
+      }
+      headerSkipped = true
+    }
     while (delegate.next()) {
       val v = delegate.get().getUTF8String(0).toString
       val parsed = parser.parse(v)
