@@ -4,7 +4,9 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
 import org.apache.spark.sql.connector.read._
+import org.apache.spark.sql.errors.QueryCompilationErrors
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.v2.FileScan
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
@@ -150,12 +152,10 @@ class FourMcScan(
     val attributeMap = partitionAttributes.map(a => normalizeName(a.name) -> a).toMap
     val readPartitionAttributes = readPartitionSchema.map { readField =>
       attributeMap.getOrElse(normalizeName(readField.name),
-        throw org.apache.spark.sql.errors.QueryCompilationErrors
-          .cannotFindPartitionColumnInPartitionSchemaError(readField, fileIndex.partitionSchema))
+        throw QueryCompilationErrors.cannotFindPartitionColumnInPartitionSchemaError(
+          readField, fileIndex.partitionSchema))
     }
-    lazy val partitionValueProject =
-      org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
-        .generate(readPartitionAttributes, partitionAttributes)
+    lazy val partitionValueProject = GenerateUnsafeProjection.generate(readPartitionAttributes, partitionAttributes)
 
     val allFiles = selectedPartitions.flatMap(_.files)
     val useParallel = parallelExpandEnabled && allFiles.size >= parallelExpandThreshold

@@ -4,24 +4,25 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
+import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JacksonParser}
+import org.apache.spark.sql.connector.catalog.Table
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile}
-import org.apache.spark.sql.execution.datasources.PartitioningAwareFileIndex
+import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.fourmc.{FourMcFileDataSource, FourMcScan, FourMcScanBuilder, FourMcTable}
+import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
 
-import org.apache.spark.sql.fourmc.{FourMcFileDataSource, FourMcScan, FourMcScanBuilder, FourMcSliceReader, FourMcTable}
+import scala.annotation.tailrec
 import scala.collection.JavaConverters._
-import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.json.{JSONOptions, JacksonParser, CreateJacksonParser}
-import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.unsafe.types.UTF8String
 
 /** DataSource short name fourmc.json */
 final class FourMcJsonFileDataSource extends FourMcFileDataSource {
   override def shortName(): String = "fourmc.json"
-  override def getTable(options: CaseInsensitiveStringMap) = {
+
+  override def getTable(options: CaseInsensitiveStringMap): Table = {
     val paths = parsePaths(options)
     require(paths.nonEmpty, "Option 'path' or 'paths' must be specified for fourmc.json datasource")
     val cleaned = dropPathOptions(options)
@@ -59,11 +60,11 @@ final class FourMcJsonScanBuilder(
       java.lang.Boolean.parseBoolean(options.getOrDefault("withOffset", "false"))
     val readSchema = if (withOffset) {
       StructType(Seq(
-        org.apache.spark.sql.types.StructField("offset", org.apache.spark.sql.types.LongType, false),
-        org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, true)
+        org.apache.spark.sql.types.StructField("offset", org.apache.spark.sql.types.LongType, nullable = false),
+        org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)
       ))
     } else {
-      StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, true)))
+      StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)))
     }
     val partitionSchema = fileIndex.partitionSchema
     new FourMcJsonScan(
@@ -113,15 +114,21 @@ final class FourMcJsonMultiSliceReader(
 ) extends PartitionReader[InternalRow] {
   private var idx = 0
   private var current: FourMcJsonSliceReader = _
+
+  @tailrec
   override def next(): Boolean = {
     if (current == null) {
       if (idx >= slices.length) return false
       current = new FourMcJsonSliceReader(slices(idx), dataSchema, options, broadcastConf.value.value)
       idx += 1
     }
-    if (current.next()) true else { current.close(); current = null; next() }
+    if (current.next()) true else {
+      current.close(); current = null; next()
+    }
   }
+
   override def get(): InternalRow = current.get()
+
   override def close(): Unit = if (current != null) current.close()
 }
 
@@ -133,7 +140,7 @@ final class FourMcJsonSliceReader(
 ) extends PartitionReader[InternalRow] {
   private val delegate = new org.apache.spark.sql.fourmc.FourMcSliceReader(
     pf,
-    StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, true))),
+    StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true))),
     false,
     conf
   )
@@ -146,10 +153,14 @@ final class FourMcJsonSliceReader(
       val v: UTF8String = delegate.get().getUTF8String(0)
       val rows = parser.parse[UTF8String](v, CreateJacksonParser.utf8String, identity)
       val it = rows.iterator
-      if (it.hasNext) { current = it.next(); return true }
+      if (it.hasNext) {
+        current = it.next(); return true
+      }
     }
     false
   }
+
   override def get(): InternalRow = current
+
   override def close(): Unit = delegate.close()
 }
