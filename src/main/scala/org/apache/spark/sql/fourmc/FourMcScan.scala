@@ -161,12 +161,24 @@ final class FourMcScan(
     val splitFiles: Seq[PartitionedFile] = if (useParallel) {
       // Map each file path to its partition values
       val partValuesByPath = scala.collection.mutable.HashMap.empty[String, org.apache.spark.sql.catalyst.InternalRow]
+      // Cache preferred hosts per file path using Spark's helper
+      val hostsByPath = scala.collection.mutable.HashMap.empty[String, Array[String]]
       selectedPartitions.foreach { partition =>
         val pvalues = if (readPartitionAttributes != partitionAttributes) {
           partitionValueProject(partition.values).copy()
         } else partition.values
         partition.files.foreach { f =>
-          partValuesByPath.update(f.getPath.toUri.toString, pvalues)
+          val pStr = f.getPath.toUri.toString
+          // Cache only meaningful partition values (non-empty row)
+          if (pvalues.numFields > 0) {
+            partValuesByPath.update(pStr, pvalues)
+          }
+          val base = PartitionedFileUtil.getPartitionedFile(f, f.getPath, pvalues)
+          // Cache only non-empty preferred locations
+          val locs = base.locations
+          if (locs != null && locs.nonEmpty) {
+            hostsByPath.update(pStr, locs)
+          }
         }
       }
       // Prepare (path, len) pairs
@@ -180,7 +192,8 @@ final class FourMcScan(
       )
       slices.iterator.map { s =>
         val pv = partValuesByPath.getOrElse(s.path, org.apache.spark.sql.catalyst.InternalRow.empty)
-        PartitionedFile(pv, s.path, s.start, s.length, Array.empty[String])
+        val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
+        PartitionedFile(pv, s.path, s.start, s.length, hosts)
       }.toSeq.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     } else {
       selectedPartitions.flatMap { partition =>
