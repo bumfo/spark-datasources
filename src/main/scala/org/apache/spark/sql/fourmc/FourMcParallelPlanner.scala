@@ -42,9 +42,9 @@ object FourMcParallelPlanner {
       case n => s"FourMc: expand slices for $n files:<br/>${files.head._1}, ..."
     }
 
-    try {
+    val slices = try {
       sc.setJobDescription(desc)
-      val slices = rdd.mapPartitions { iter =>
+      rdd.mapPartitions { iter =>
         iter.flatMap { case (path, len) =>
           // Use empty partition values and hosts; they're reconstructed on the driver
           val base = PartitionedFile(InternalRow.empty, path, 0L, len, Array.empty[String])
@@ -53,9 +53,10 @@ object FourMcParallelPlanner {
             .map(pf => Slice(pf.filePath, pf.start, pf.length))
         }
       }.collect()
-      slices.toSeq
     } finally {
       sc.setJobDescription(previous)
     }
+
+    slices.toSeq
   }
 }
