@@ -1,1 +1,1 @@
-com.example.fourmc.datasource.FourMcFileDataSource
+org.apache.spark.sql.fourmc.FourMcFileDataSource
