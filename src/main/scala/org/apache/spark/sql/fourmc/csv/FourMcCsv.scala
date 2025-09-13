@@ -88,25 +88,27 @@ final class FourMcCsvScan(
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastConf: Broadcast[SerializableConfiguration] =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
-    new FourMcCsvPartitionReaderFactory(readDataSchema, options, broadcastConf)
+    val parsed = new CSVOptions(options.asCaseSensitiveMap().asScala.toMap,
+      columnPruning = true, SQLConf.get.sessionLocalTimeZone)
+    new FourMcCsvPartitionReaderFactory(readDataSchema, parsed, broadcastConf)
   }
 }
 
 final class FourMcCsvPartitionReaderFactory(
     dataSchema: StructType,
-    options: CaseInsensitiveStringMap,
+    parsedOptions: CSVOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReaderFactory {
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     val fp = partition.asInstanceOf[FilePartition]
-    new FourMcCsvMultiSliceReader(fp.files.toSeq, dataSchema, options, broadcastConf)
+    new FourMcCsvMultiSliceReader(fp.files.toSeq, dataSchema, parsedOptions, broadcastConf)
   }
 }
 
 final class FourMcCsvMultiSliceReader(
     slices: Seq[PartitionedFile],
     dataSchema: StructType,
-    options: CaseInsensitiveStringMap,
+    parsedOptions: CSVOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReader[InternalRow] {
   private var idx = 0
@@ -116,7 +118,7 @@ final class FourMcCsvMultiSliceReader(
   override def next(): Boolean = {
     if (current == null) {
       if (idx >= slices.length) return false
-      current = new FourMcCsvSliceReader(slices(idx), dataSchema, options, broadcastConf.value.value)
+      current = new FourMcCsvSliceReader(slices(idx), dataSchema, parsedOptions, broadcastConf.value.value)
       idx += 1
     }
     if (current.next()) true else {
@@ -134,7 +136,7 @@ final class FourMcCsvMultiSliceReader(
 final class FourMcCsvSliceReader(
     pf: PartitionedFile,
     dataSchema: StructType,
-    options: CaseInsensitiveStringMap,
+    csvOpts: CSVOptions,
     conf: Configuration
 ) extends PartitionReader[InternalRow] {
   private val delegate = new FourMcSliceReader(
@@ -143,7 +145,6 @@ final class FourMcCsvSliceReader(
     false,
     conf
   )
-  private val csvOpts = new CSVOptions(options.asCaseSensitiveMap().asScala.toMap, columnPruning = true, SQLConf.get.sessionLocalTimeZone)
   private val parser = new UnivocityParser(dataSchema, csvOpts)
   private var current: InternalRow = _
   private var headerSkipped = false

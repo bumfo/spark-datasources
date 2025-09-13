@@ -89,25 +89,26 @@ final class FourMcJsonScan(
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastConf: Broadcast[SerializableConfiguration] =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
-    new FourMcJsonPartitionReaderFactory(readDataSchema, options, broadcastConf)
+    val parsed = new JSONOptions(options.asCaseSensitiveMap().asScala.toMap, SQLConf.get.sessionLocalTimeZone)
+    new FourMcJsonPartitionReaderFactory(readDataSchema, parsed, broadcastConf)
   }
 }
 
 final class FourMcJsonPartitionReaderFactory(
     dataSchema: StructType,
-    options: CaseInsensitiveStringMap,
+    parsedOptions: JSONOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReaderFactory {
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     val fp = partition.asInstanceOf[FilePartition]
-    new FourMcJsonMultiSliceReader(fp.files.toSeq, dataSchema, options, broadcastConf)
+    new FourMcJsonMultiSliceReader(fp.files.toSeq, dataSchema, parsedOptions, broadcastConf)
   }
 }
 
 final class FourMcJsonMultiSliceReader(
     slices: Seq[PartitionedFile],
     dataSchema: StructType,
-    options: CaseInsensitiveStringMap,
+    parsedOptions: JSONOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReader[InternalRow] {
   private var idx = 0
@@ -117,7 +118,7 @@ final class FourMcJsonMultiSliceReader(
   override def next(): Boolean = {
     if (current == null) {
       if (idx >= slices.length) return false
-      current = new FourMcJsonSliceReader(slices(idx), dataSchema, options, broadcastConf.value.value)
+      current = new FourMcJsonSliceReader(slices(idx), dataSchema, parsedOptions, broadcastConf.value.value)
       idx += 1
     }
     if (current.next()) true else {
@@ -135,7 +136,7 @@ final class FourMcJsonMultiSliceReader(
 final class FourMcJsonSliceReader(
     pf: PartitionedFile,
     dataSchema: StructType,
-    options: CaseInsensitiveStringMap,
+    jsonOpts: JSONOptions,
     conf: Configuration
 ) extends PartitionReader[InternalRow] {
   private val delegate = new org.apache.spark.sql.fourmc.FourMcSliceReader(
@@ -144,7 +145,6 @@ final class FourMcJsonSliceReader(
     false,
     conf
   )
-  private val jsonOpts = new JSONOptions(options.asCaseSensitiveMap().asScala.toMap, SQLConf.get.sessionLocalTimeZone)
   private val parser = new JacksonParser(dataSchema, jsonOpts, allowArrayAsStructs = false)
   private var current: InternalRow = _
 
