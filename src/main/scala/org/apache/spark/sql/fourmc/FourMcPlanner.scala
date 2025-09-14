@@ -87,19 +87,19 @@ case class FourMcPlanner(
         parallelExpandMax
       )
       val empty = InternalRow(Array.empty)
-      expanded.iterator.map { s =>
+      expanded.map { s =>
         val pv = partValuesByPath.getOrElse(s.path, empty)
         val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
         PartitionedFile(pv, s.path, s.start, s.length, hosts)
-      }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+      }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     } else {
-      selectedPartitions.flatMap { partition =>
+      selectedPartitions.iterator.flatMap { partition =>
         val partitionValues = if (readPartitionAttributes != partitionAttributes) {
           partitionValueProject(partition.values).copy()
         } else {
           partition.values
         }
-        partition.files.flatMap { file =>
+        partition.files.iterator.flatMap { file =>
           val filePath = file.getPath
           val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
           FourMcPlanner.expandPartitionedFile(base, maxSplitBytes, broadcastConf)
@@ -175,7 +175,7 @@ object FourMcPlanner {
       confBroadcast: Broadcast[SerializableConfiguration],
       maxSplitBytes: Long,
       parallelismMax: Int
-  ): Seq[Slice] = {
+  ): Array[Slice] = {
     if (files.isEmpty) return Seq.empty
     val numTasks = math.min(files.size, math.max(1, parallelismMax))
     val rdd = sc.parallelize(files, numTasks)
@@ -201,7 +201,7 @@ object FourMcPlanner {
       sc.setJobDescription(previous)
     }
 
-    slices.toSeq
+    slices
   }
 
   /** Convert a PartitionReader into an Iterator that auto-closes on exhaustion. */
@@ -219,7 +219,8 @@ object FourMcPlanner {
       val row = reader.get()
       hasNextRow = reader.next()
       if (!hasNextRow) {
-        reader.close(); open = false
+        reader.close();
+        open = false
       }
       row
     }
