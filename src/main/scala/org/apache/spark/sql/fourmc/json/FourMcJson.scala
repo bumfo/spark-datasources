@@ -7,7 +7,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JSONOptionsInRead, JacksonParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.fourmc.{FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcTable}
+import org.apache.spark.sql.fourmc.{FourMcPlanning, FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcTable}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -43,16 +43,20 @@ class FourMcJsonTable(
     fallbackFileFormat: Class[_ <: org.apache.spark.sql.execution.datasources.FileFormat]
 ) extends FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat) {
   override protected def buildScanBuilder(): FourMcScanBuilder =
-    new FourMcJsonScanBuilder(sparkSession, fileIndex, options, schema)
+    new FourMcJsonScanBuilder(sparkSession, fileIndex, options, schema, planning)
 
   override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
-    val parsedOptions = new JSONOptionsInRead(
+    val parsedOptionsInRead = new JSONOptionsInRead(
       options.asScala.toMap,
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord
     )
-    org.apache.spark.sql.execution.datasources.json.JsonDataSource(parsedOptions)
-      .inferSchema(sparkSession, files, parsedOptions)
+    val parsed = new JSONOptions(options.asScala.toMap, sparkSession.sessionState.conf.sessionLocalTimeZone,
+      sparkSession.sessionState.conf.columnNameOfCorruptRecord)
+    val ds = planning.datasetOfLines(parsed.encoding)
+    val struct = org.apache.spark.sql.execution.datasources.json.TextInputJsonDataSource
+      .inferFromDataset(ds, parsed)
+    Some(struct)
   }
 }
 
@@ -60,8 +64,9 @@ final class FourMcJsonScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     opts: CaseInsensitiveStringMap,
-    readSchema: StructType
-) extends FourMcScanBuilder(spark, fileIndex, opts) {
+    readSchema: StructType,
+    planning: FourMcPlanning
+) extends FourMcScanBuilder(spark, fileIndex, opts, planning) {
   override lazy val build: Scan = {
     val partitionSchema = fileIndex.partitionSchema
     new FourMcJsonScan(
@@ -71,7 +76,8 @@ final class FourMcJsonScanBuilder(
       options,
       partitionSchema,
       Seq.empty,
-      Seq.empty
+      Seq.empty,
+      planning
     )
   }
 }
@@ -83,8 +89,9 @@ final class FourMcJsonScan(
     options: CaseInsensitiveStringMap,
     override val readPartitionSchema: StructType,
     override val partitionFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression],
-    override val dataFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression]
-) extends FourMcScan(sparkSession, fileIndex, readDataSchema, options, readPartitionSchema, partitionFilters, dataFilters) {
+    override val dataFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression],
+    planning: FourMcPlanning
+) extends FourMcScan(sparkSession, fileIndex, readDataSchema, options, readPartitionSchema, partitionFilters, dataFilters, planning) {
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastConf: Broadcast[SerializableConfiguration] =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
@@ -153,7 +160,8 @@ final class FourMcJsonSliceReader(
       val rows = parser.parse[UTF8String](v, CreateJacksonParser.utf8String, identity)
       val it = rows.iterator
       if (it.hasNext) {
-        current = it.next(); return true
+        current = it.next();
+        return true
       }
     }
     false
