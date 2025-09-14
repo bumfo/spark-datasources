@@ -91,7 +91,7 @@ case class FourMcPlanner(
         val pv = partValuesByPath.getOrElse(s.path, empty)
         val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
         PartitionedFile(pv, s.path, s.start, s.length, hosts)
-      }.toSeq.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+      }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     } else {
       selectedPartitions.flatMap { partition =>
         val partitionValues = if (readPartitionAttributes != partitionAttributes) {
