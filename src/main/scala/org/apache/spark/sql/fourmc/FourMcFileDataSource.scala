@@ -111,4 +111,6 @@ class FourMcFileDataSource
       else first
     }
   }
+
+  override def supportsExternalMetadata(): Boolean = false
 }
