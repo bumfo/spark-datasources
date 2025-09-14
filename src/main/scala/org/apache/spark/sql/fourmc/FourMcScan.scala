@@ -55,7 +55,7 @@ class FourMcScanBuilder(
       StructType(Seq(StructField("value", StringType, nullable = true)))
     }
     val partitionSchema = fileIndex.partitionSchema
-    new FourMcTextScan(
+    FourMcTextScan(
       sparkSession = spark,
       fileIndex = fileIndex,
       readDataSchema = resolvedSchema,
