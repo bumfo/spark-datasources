@@ -70,6 +70,8 @@ class FourMcJsonTable(
     case _: NullType => true
     case _ => false
   }
+
+  override def formatName: String = "FOURMC_JSON"
 }
 
 final class FourMcJsonScanBuilder(
