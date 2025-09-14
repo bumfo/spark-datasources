@@ -1,6 +1,5 @@
 package org.apache.spark.sql.fourmc
 
-import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.connector.read._
@@ -10,7 +9,6 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.util.SerializableConfiguration
 
 import java.util.Locale
-import scala.collection.mutable
 
 /**
  * Builder for 4mc scans.  Similar to CSVScanBuilder, it accepts Spark's
@@ -178,9 +176,3 @@ class FourMcScan(
     )
   }
 }
-
-/**
- * Companion object with helper functions to expand partitioned files along
- * 4mc block boundaries.  The logic is extracted here for clarity.
- */
-// Block and parallel planners moved under FourMcPlanning companion.
