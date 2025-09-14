@@ -7,7 +7,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, UnivocityParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.fourmc.{FourMcPlanning, FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcSliceReader, FourMcTable}
+import org.apache.spark.sql.fourmc.{FourMcPlanner, FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcSliceReader, FourMcTable}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -42,7 +42,7 @@ class FourMcCSVTable(
     fallbackFileFormat: Class[_ <: org.apache.spark.sql.execution.datasources.FileFormat]
 ) extends FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat) {
   override protected def buildScanBuilder(): FourMcScanBuilder =
-    new FourMcCSVScanBuilder(sparkSession, fileIndex, options, schema, planning)
+    new FourMcCSVScanBuilder(sparkSession, fileIndex, options, schema, planner)
 
   override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
     val parsed = new CSVOptions(
@@ -50,7 +50,7 @@ class FourMcCSVTable(
       columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
       sparkSession.sessionState.conf.sessionLocalTimeZone
     )
-    val ds = planning.datasetOfLines(Some(parsed.charset))
+    val ds = planner.datasetOfLines(Some(parsed.charset))
     val first = org.apache.spark.sql.execution.datasources.csv.CSVUtils.filterCommentAndEmpty(ds, parsed).take(1).headOption
     val struct = org.apache.spark.sql.execution.datasources.csv.TextInputCSVDataSource
       .inferFromDataset(sparkSession, ds, first, parsed)
@@ -63,8 +63,8 @@ final class FourMcCSVScanBuilder(
     fileIndex: PartitioningAwareFileIndex,
     opts: CaseInsensitiveStringMap,
     readSchema: StructType,
-    planning: FourMcPlanning
-) extends FourMcScanBuilder(spark, fileIndex, opts, planning) {
+    planner: FourMcPlanner
+) extends FourMcScanBuilder(spark, fileIndex, opts, planner) {
   override lazy val build: Scan = {
     val partitionSchema = fileIndex.partitionSchema
     new FourMcCSVScan(
@@ -75,7 +75,7 @@ final class FourMcCSVScanBuilder(
       partitionSchema,
       Seq.empty,
       Seq.empty,
-      planning
+      planner
     )
   }
 }
@@ -88,8 +88,8 @@ final class FourMcCSVScan(
     override val readPartitionSchema: StructType,
     override val partitionFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression],
     override val dataFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression],
-    planning: FourMcPlanning
-) extends FourMcScan(sparkSession, fileIndex, readDataSchema, options, readPartitionSchema, partitionFilters, dataFilters, planning) {
+    planner: FourMcPlanner
+) extends FourMcScan(sparkSession, fileIndex, readDataSchema, options, readPartitionSchema, partitionFilters, dataFilters, planner) {
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastConf: Broadcast[SerializableConfiguration] =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))

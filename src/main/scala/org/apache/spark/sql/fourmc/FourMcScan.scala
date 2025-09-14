@@ -34,7 +34,7 @@ class FourMcScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     val options: CaseInsensitiveStringMap,
-    planning: FourMcPlanning
+    planner: FourMcPlanner
 ) extends ScanBuilder {
 
   // Determine whether to include the offset column.  We re-compute the data
@@ -65,7 +65,7 @@ class FourMcScanBuilder(
       readPartitionSchema = partitionSchema,
       partitionFilters = Seq.empty,
       dataFilters = Seq.empty,
-      planning = planning
+      planner = planner
     )
   }
 }
@@ -96,7 +96,7 @@ class FourMcScan(
     override val readPartitionSchema: StructType,
     override val partitionFilters: Seq[Expression],
     override val dataFilters: Seq[Expression],
-    planning: FourMcPlanning
+    planner: FourMcPlanner
 ) extends FileScan with Batch {
 
   // Broadcast the Hadoop configuration so that executors can construct
@@ -141,7 +141,7 @@ class FourMcScan(
    * footer index, then coalesce those slices back into FilePartitions using
    * Spark's helper to balance task sizes.
    */
-  override lazy val planInputPartitions: Array[InputPartition] = planning.filePartitions
+  override lazy val planInputPartitions: Array[InputPartition] = planner.filePartitions
 
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
@@ -174,7 +174,7 @@ class FourMcScan(
       readPartitionSchema,
       partitionFilters,
       dataFilters,
-      planning.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+      planner.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
     )
   }
 }
@@ -183,49 +183,4 @@ class FourMcScan(
  * Companion object with helper functions to expand partitioned files along
  * 4mc block boundaries.  The logic is extracted here for clarity.
  */
-object FourMcBlockPlanner {
-
-  import com.fing.compression.fourmc.FourMcBlockIndex
-  import org.apache.spark.sql.execution.datasources.PartitionedFile
-
-  /**
-   * Expand a single PartitionedFile into multiple block-aligned slices.
-   * The first slice always starts at 0, so the reader does not skip the
-   * first line.  The final slice always ends at the file length to avoid
-   * losing the last line.  Each slice is limited in size by
-   * `maxPartitionBytes` (but always includes at least one block).
-   */
-  def expandPartitionedFile(
-      pf: PartitionedFile,
-      maxPartitionBytes: Long,
-      broadcastConf: Broadcast[SerializableConfiguration]
-  ): Seq[PartitionedFile] = {
-    val conf = broadcastConf.value.value
-    val path = new Path(pf.filePath)
-    val fs: FileSystem = path.getFileSystem(conf)
-    val fileLen = pf.length
-    val index = FourMcBlockIndex.readIndex(fs, path)
-    if (index == null || index.isEmpty) {
-      return Seq(pf.copy(start = 0L, length = fileLen))
-    }
-    val blocks = index.getNumberOfBlocks
-    val out = mutable.ArrayBuffer[PartitionedFile]()
-    var i = 0
-    while (i < blocks) {
-      val start = if (i == 0) 0L else index.getPosition(i)
-      var end = start
-      var acc = 0L
-      var j = i
-      while (j < blocks && (acc < maxPartitionBytes || j == i)) {
-        val cur = index.getPosition(j)
-        val next = if (j + 1 < blocks) index.getPosition(j + 1) else fileLen
-        acc += (next - cur)
-        end = next
-        j += 1
-      }
-      out += pf.copy(start = start, length = (end - start))
-      i = j
-    }
-    out
-  }
-}
+// Block and parallel planners moved under FourMcPlanning companion.

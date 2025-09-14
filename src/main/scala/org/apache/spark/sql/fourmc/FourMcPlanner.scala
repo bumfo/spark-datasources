@@ -1,7 +1,7 @@
 package org.apache.spark.sql.fourmc
 
 import com.fing.mapreduce.FourMcLineRecordReader
-import org.apache.hadoop.fs.Path
+import org.apache.hadoop.fs.{Path, FileSystem}
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapreduce.TaskAttemptID
 import org.apache.hadoop.mapreduce.lib.input.FileSplit
@@ -20,7 +20,7 @@ import org.apache.spark.util.SerializableConfiguration
 import java.util.Locale
 import scala.collection.mutable
 
-case class FourMcPlanning(
+case class FourMcPlanner(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     options: CaseInsensitiveStringMap,
@@ -82,7 +82,7 @@ case class FourMcPlanning(
         }
       }
       val pairs = allFiles.map(f => (f.getPath.toUri.toString, f.getLen))
-      val expanded = FourMcParallelPlanner.expandWithSparkJob(
+      val expanded = FourMcPlanner.expandWithSparkJob(
         spark.sparkContext,
         pairs,
         broadcastConf,
@@ -105,8 +105,7 @@ case class FourMcPlanning(
         partition.files.flatMap { file =>
           val filePath = file.getPath
           val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
-          FourMcBlockPlanner
-            .expandPartitionedFile(base, maxSplitBytes, broadcastConf)
+          FourMcPlanner.expandPartitionedFile(base, maxSplitBytes, broadcastConf)
         }
       }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     }
@@ -147,5 +146,83 @@ case class FourMcPlanning(
       }
     }
     spark.createDataset(rdd)(Encoders.STRING)
+  }
+}
+
+object FourMcPlanner {
+  import com.fing.compression.fourmc.FourMcBlockIndex
+  import org.apache.spark.sql.execution.datasources.PartitionedFile
+
+  /** Expand a single PartitionedFile into block-aligned slices using the 4mc footer index. */
+  def expandPartitionedFile(
+      pf: PartitionedFile,
+      maxPartitionBytes: Long,
+      broadcastConf: Broadcast[SerializableConfiguration]
+  ): Seq[PartitionedFile] = {
+    val conf = broadcastConf.value.value
+    val path = new Path(pf.filePath)
+    val fs: FileSystem = path.getFileSystem(conf)
+    val fileLen = pf.length
+    val index = FourMcBlockIndex.readIndex(fs, path)
+    if (index == null || index.isEmpty) {
+      return Seq(pf.copy(start = 0L, length = fileLen))
+    }
+    val blocks = index.getNumberOfBlocks
+    val out = mutable.ArrayBuffer[PartitionedFile]()
+    var i = 0
+    while (i < blocks) {
+      val start = if (i == 0) 0L else index.getPosition(i)
+      var end = start
+      var acc = 0L
+      var j = i
+      while (j < blocks && (acc < maxPartitionBytes || j == i)) {
+        val cur = index.getPosition(j)
+        val next = if (j + 1 < blocks) index.getPosition(j + 1) else fileLen
+        acc += (next - cur)
+        end = next
+        j += 1
+      }
+      out += pf.copy(start = start, length = (end - start))
+      i = j
+    }
+    out
+  }
+
+  /** Parallel expansion helper using Spark executors to compute slices for many files. */
+  final case class Slice(path: String, start: Long, length: Long) extends Serializable
+
+  def expandWithSparkJob(
+      sc: org.apache.spark.SparkContext,
+      files: Seq[(String, Long)],
+      confBroadcast: Broadcast[SerializableConfiguration],
+      maxSplitBytes: Long,
+      parallelismMax: Int
+  ): Seq[Slice] = {
+    if (files.isEmpty) return Seq.empty
+    val numTasks = math.min(files.size, math.max(1, parallelismMax))
+    val rdd = sc.parallelize(files, numTasks)
+
+    val previous = sc.getLocalProperty(org.apache.spark.SparkContext.SPARK_JOB_DESCRIPTION)
+    val desc = files.size match {
+      case 0 => "FourMc: expand slices for 0 files"
+      case 1 => s"FourMc: expand slices for 1 file:<br/>${files.head._1}"
+      case n => s"FourMc: expand slices for $n files:<br/>${files.head._1}, ..."
+    }
+
+    val slices = try {
+      sc.setJobDescription(desc)
+      rdd.mapPartitions { iter =>
+        iter.flatMap { case (path, len) =>
+          val base = PartitionedFile(InternalRow.empty, path, 0L, len, Array.empty[String])
+          FourMcPlanner
+            .expandPartitionedFile(base, maxSplitBytes, confBroadcast)
+            .map(pf => Slice(pf.filePath, pf.start, pf.length))
+        }
+      }.collect()
+    } finally {
+      sc.setJobDescription(previous)
+    }
+
+    slices.toSeq
   }
 }
