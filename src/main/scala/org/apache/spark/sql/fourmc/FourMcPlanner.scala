@@ -226,4 +226,13 @@ object FourMcPlanner {
       row
     }
   }
+
+  /** Build a per-slice read function without capturing the enclosing planner instance. */
+  def readFunction(
+      confBc: Broadcast[SerializableConfiguration],
+      dataSchema: StructType
+  ): PartitionedFile => Iterator[InternalRow] = { pf: PartitionedFile =>
+    val reader = new FourMcSliceReader(pf, dataSchema, withOffset = false, confBc.value.value)
+    iteratorFromReader(reader)
+  }
 }
