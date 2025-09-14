@@ -9,7 +9,7 @@ import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, Par
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.fourmc.{FourMcPlanning, FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcTable}
 import org.apache.spark.sql.internal.SQLConf
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.unsafe.types.UTF8String
 import org.apache.spark.util.SerializableConfiguration
@@ -57,6 +57,18 @@ class FourMcJsonTable(
     val struct = org.apache.spark.sql.execution.datasources.json.TextInputJsonDataSource
       .inferFromDataset(ds, parsed)
     Some(struct)
+  }
+
+  // Match Spark's JsonTable supported types
+  override def supportsDataType(dataType: DataType): Boolean = dataType match {
+    case _: AnsiIntervalType => false
+    case _: AtomicType => true
+    case st: StructType => st.forall(f => supportsDataType(f.dataType))
+    case ArrayType(elementType, _) => supportsDataType(elementType)
+    case MapType(keyType, valueType, _) => supportsDataType(keyType) && supportsDataType(valueType)
+    case udt: UserDefinedType[_] => supportsDataType(udt.sqlType)
+    case _: NullType => true
+    case _ => false
   }
 }
 
