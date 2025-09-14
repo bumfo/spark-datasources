@@ -31,5 +31,6 @@ abstract class FourMcSchemaAwareDataSource extends FourMcFileDataSource {
     val tableName = computeTableName(paths)
     createTable(tableName, cleaned, paths, Some(schema))
   }
-}
 
+  override def supportsExternalMetadata(): Boolean = true
+}
