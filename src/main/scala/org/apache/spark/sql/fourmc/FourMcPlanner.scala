@@ -1,7 +1,7 @@
 package org.apache.spark.sql.fourmc
 
 import com.fing.mapreduce.FourMcLineRecordReader
-import org.apache.hadoop.fs.{Path, FileSystem}
+import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.hadoop.io.Text
 import org.apache.hadoop.mapreduce.TaskAttemptID
 import org.apache.hadoop.mapreduce.lib.input.FileSplit
@@ -48,8 +48,8 @@ case class FourMcPlanner(
 
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
-  /** Compute 4mc block‑aligned slices (PartitionedFile) for all selected files. */
-  lazy val splitFiles: Seq[PartitionedFile] = {
+  /** Compute FilePartitions by expanding 4mc slices and coalescing by target size. */
+  lazy val filePartitions: Array[org.apache.spark.sql.connector.read.InputPartition] = {
     val selectedPartitions = fileIndex.listFiles(partitionFilters, dataFilters)
 
     val partitionAttributes: Seq[Attribute] = fileIndex.partitionSchema.toAttributes
@@ -110,39 +110,40 @@ case class FourMcPlanner(
       }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     }
 
-    slices
-  }
-
-  /** Convert the planned slices into Spark input partitions for the scan. */
-  def filePartitions: Array[org.apache.spark.sql.connector.read.InputPartition] = {
-    FilePartition.getFilePartitions(spark, splitFiles, maxSplitBytes).toArray
+    FilePartition.getFilePartitions(spark, slices, maxSplitBytes).toArray
   }
 
   /** Build a Dataset[String] reading lines from planned slices using 4mc reader. */
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
     val sc = spark.sparkContext
-    val slices = splitFiles
+    val parts = filePartitions.map(_.asInstanceOf[FilePartition]).toSeq
     val confBc = broadcastConf
-    val rdd: RDD[String] = sc.parallelize(slices, slices.size.max(1)).mapPartitions { iter =>
-      iter.flatMap { pf =>
-        val conf = confBc.value.value
-        val path = new Path(pf.filePath)
-        val split = new FileSplit(path, pf.start, pf.length, Array.empty)
-        val ctx = new TaskAttemptContextImpl(conf, new TaskAttemptID())
-        val reader = new FourMcLineRecordReader()
-        reader.initialize(split, ctx)
-        new Iterator[String] {
-          private var hasNextKV: Boolean = reader.nextKeyValue()
+    val rdd: RDD[String] = sc.parallelize(parts, parts.size.max(1)).mapPartitions { fpIter =>
+      fpIter.flatMap { fp =>
+        fp.files.iterator.flatMap { pf =>
+          val conf = confBc.value.value
+          val path = new Path(pf.filePath)
+          val split = new FileSplit(path, pf.start, pf.length, Array.empty)
+          val ctx = new TaskAttemptContextImpl(conf, new TaskAttemptID())
+          val reader = new FourMcLineRecordReader()
+          reader.initialize(split, ctx)
+          new Iterator[String] {
+            private var open = true
+            private var hasNextKV: Boolean = reader.nextKeyValue()
 
-          override def hasNext: Boolean = hasNextKV
+            override def hasNext: Boolean = open && hasNextKV
 
-          override def next(): String = {
-            val v: Text = reader.getCurrentValue
-            val s = v.toString
-            hasNextKV = reader.nextKeyValue()
-            s
+            override def next(): String = {
+              val v: Text = reader.getCurrentValue
+              val s = v.toString
+              hasNextKV = reader.nextKeyValue()
+              if (!hasNextKV) {
+                reader.close(); open = false
+              }
+              s
+            }
           }
-        }.toIterable
+        }
       }
     }
     spark.createDataset(rdd)(Encoders.STRING)
@@ -150,6 +151,7 @@ case class FourMcPlanner(
 }
 
 object FourMcPlanner {
+
   import com.fing.compression.fourmc.FourMcBlockIndex
   import org.apache.spark.sql.execution.datasources.PartitionedFile
 
