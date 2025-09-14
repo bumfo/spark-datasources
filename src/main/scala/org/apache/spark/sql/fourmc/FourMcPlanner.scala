@@ -123,7 +123,7 @@ case class FourMcPlanner(
       readFunction,
       parts
     )
-    val df = spark.internalCreateDataFrame(rdd, dataSchema).as(Encoders.STRING)
+    spark.internalCreateDataFrame(rdd, dataSchema).as(Encoders.STRING)
   }
 }
 
