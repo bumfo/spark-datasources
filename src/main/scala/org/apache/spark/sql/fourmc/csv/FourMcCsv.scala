@@ -82,7 +82,7 @@ final class FourMcCSVScanBuilder(
   }
 }
 
-final class FourMcCSVScan(
+final case class FourMcCSVScan(
     override val sparkSession: SparkSession,
     override val fileIndex: PartitioningAwareFileIndex,
     override val readDataSchema: StructType,
@@ -92,6 +92,11 @@ final class FourMcCSVScan(
     override val dataFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression],
     planner: FourMcPlanner
 ) extends FourMcScan(sparkSession, fileIndex, readDataSchema, options, readPartitionSchema, partitionFilters, dataFilters, planner) {
+  override protected def copyWithFilters(
+      partitionFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression],
+      dataFilters: Seq[org.apache.spark.sql.catalyst.expressions.Expression]
+  ): FourMcScan = this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastConf: Broadcast[SerializableConfiguration] =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))

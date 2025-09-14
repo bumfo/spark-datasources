@@ -55,7 +55,7 @@ class FourMcScanBuilder(
       StructType(Seq(StructField("value", StringType, nullable = true)))
     }
     val partitionSchema = fileIndex.partitionSchema
-    new FourMcScan(
+    new FourMcTextScan(
       sparkSession = spark,
       fileIndex = fileIndex,
       readDataSchema = resolvedSchema,
@@ -86,7 +86,7 @@ class FourMcScanBuilder(
  * at offset 0L to prevent dropping the first line, and the final slice
  * extends to the end of the file to read the last line.
  */
-class FourMcScan(
+abstract class FourMcScan(
     override val sparkSession: SparkSession,
     override val fileIndex: PartitioningAwareFileIndex,
     override val readDataSchema: StructType,
@@ -153,6 +153,12 @@ class FourMcScan(
   override def createReaderFactory(): PartitionReaderFactory =
     new FourMcPartitionReaderFactory(readDataSchema, readDataSchema.exists(_.name == "offset"), broadcastConf)
 
+  /** Force subclasses to implement copying with updated filters while preserving planner. */
+  protected def copyWithFilters(
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]
+  ): FourMcScan
+
   /**
    * Return a new FourMcScan with the provided partition and data filters.
    * Spark calls this method to push filters down into the scan.  Although
@@ -163,22 +169,27 @@ class FourMcScan(
   override def withFilters(
       partitionFilters: Seq[Expression],
       dataFilters: Seq[Expression]
-  ): this.type = {
-    // for subclasses to work
-    this
-
-    // // 4mc does not support filter pushdown/pruning. Preserve the original planner
-    // // (and thus cached file partitions) and only record filters for Spark to
-    // // apply after reading.
-    // new FourMcScan(
-    //   sparkSession,
-    //   fileIndex,
-    //   readDataSchema,
-    //   options,
-    //   readPartitionSchema,
-    //   partitionFilters,
-    //   dataFilters,
-    //   planner
-    // )
+  ): FileScan = {
+    // 4mc does not support filter pushdown/pruning. Preserve the original planner
+    // (and thus cached file partitions) and only record filters for Spark to
+    // apply after reading. Create a copy to reflect the updated filters.
+    copyWithFilters(partitionFilters, dataFilters)
   }
+}
+
+/** Concrete scan for plain 4mc text values. */
+final case class FourMcTextScan(
+    override val sparkSession: SparkSession,
+    override val fileIndex: PartitioningAwareFileIndex,
+    override val readDataSchema: StructType,
+    options: CaseInsensitiveStringMap,
+    override val readPartitionSchema: StructType,
+    override val partitionFilters: Seq[Expression],
+    override val dataFilters: Seq[Expression],
+    planner: FourMcPlanner
+) extends FourMcScan(sparkSession, fileIndex, readDataSchema, options, readPartitionSchema, partitionFilters, dataFilters, planner) {
+  override protected def copyWithFilters(
+      partitionFilters: Seq[Expression],
+      dataFilters: Seq[Expression]
+  ): FourMcScan = this.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
 }
