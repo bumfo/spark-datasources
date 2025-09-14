@@ -139,7 +139,7 @@ class FourMcScan(
    * footer index, then coalesce those slices back into FilePartitions using
    * Spark's helper to balance task sizes.
    */
-  override lazy val planInputPartitions: Array[InputPartition] = planner.filePartitions
+  override def planInputPartitions: Array[InputPartition] = planner.filePartitions
 
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
