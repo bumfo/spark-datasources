@@ -7,7 +7,7 @@ import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.csv.{CSVOptions, UnivocityParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.fourmc._
+import org.apache.spark.sql.fourmc.{FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcSliceReader, FourMcTable}
 import org.apache.spark.sql.internal.SQLConf
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
@@ -16,8 +16,7 @@ import org.apache.spark.util.SerializableConfiguration
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
-/** DataSource short name fourmc.csv */
-final class FourMcCsvFileDataSource extends FourMcSchemaAwareDataSource {
+final class FourMcCSVFileDataSource extends FourMcSchemaAwareDataSource {
   override def shortName(): String = "fourmc.csv"
 
   override protected def createTable(
@@ -25,7 +24,7 @@ final class FourMcCsvFileDataSource extends FourMcSchemaAwareDataSource {
       options: CaseInsensitiveStringMap,
       paths: Seq[String],
       userSpecifiedSchema: Option[StructType]) =
-    new FourMcCsvTable(
+    new FourMcCSVTable(
       name = tableName,
       sparkSession = SparkSession.active,
       options = options,
@@ -34,7 +33,7 @@ final class FourMcCsvFileDataSource extends FourMcSchemaAwareDataSource {
       fallbackFileFormat = fallbackFileFormat)
 }
 
-class FourMcCsvTable(
+class FourMcCSVTable(
     name: String,
     sparkSession: SparkSession,
     options: CaseInsensitiveStringMap,
@@ -43,7 +42,7 @@ class FourMcCsvTable(
     fallbackFileFormat: Class[_ <: org.apache.spark.sql.execution.datasources.FileFormat]
 ) extends FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat) {
   override protected def buildScanBuilder(): FourMcScanBuilder =
-    new FourMcCsvScanBuilder(sparkSession, fileIndex, options, schema)
+    new FourMcCSVScanBuilder(sparkSession, fileIndex, options, schema)
 
   override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
     val parsed = new CSVOptions(
@@ -56,7 +55,7 @@ class FourMcCsvTable(
   }
 }
 
-final class FourMcCsvScanBuilder(
+final class FourMcCSVScanBuilder(
     spark: SparkSession,
     fileIndex: PartitioningAwareFileIndex,
     opts: CaseInsensitiveStringMap,
@@ -64,7 +63,7 @@ final class FourMcCsvScanBuilder(
 ) extends FourMcScanBuilder(spark, fileIndex, opts) {
   override lazy val build: Scan = {
     val partitionSchema = fileIndex.partitionSchema
-    new FourMcCsvScan(
+    new FourMcCSVScan(
       spark,
       fileIndex,
       readSchema,
@@ -76,7 +75,7 @@ final class FourMcCsvScanBuilder(
   }
 }
 
-final class FourMcCsvScan(
+final class FourMcCSVScan(
     override val sparkSession: SparkSession,
     override val fileIndex: PartitioningAwareFileIndex,
     override val readDataSchema: StructType,
@@ -88,43 +87,44 @@ final class FourMcCsvScan(
   override def createReaderFactory(): PartitionReaderFactory = {
     val broadcastConf: Broadcast[SerializableConfiguration] =
       sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
-    val parsed = new CSVOptions(options.asCaseSensitiveMap().asScala.toMap,
-      columnPruning = true, SQLConf.get.sessionLocalTimeZone)
-    new FourMcCsvPartitionReaderFactory(readDataSchema, parsed, broadcastConf)
+    val parsed = new CSVOptions(
+      options.asCaseSensitiveMap().asScala.toMap,
+      columnPruning = sparkSession.sessionState.conf.csvColumnPruning,
+      SQLConf.get.sessionLocalTimeZone
+    )
+    new FourMcCSVPartitionReaderFactory(readDataSchema, parsed, broadcastConf)
   }
 }
 
-final class FourMcCsvPartitionReaderFactory(
+final class FourMcCSVPartitionReaderFactory(
     dataSchema: StructType,
     parsedOptions: CSVOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReaderFactory {
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     val fp = partition.asInstanceOf[FilePartition]
-    new FourMcCsvMultiSliceReader(fp.files.toSeq, dataSchema, parsedOptions, broadcastConf)
+    new FourMcCSVMultiSliceReader(fp.files.toSeq, dataSchema, parsedOptions, broadcastConf)
   }
 }
 
-final class FourMcCsvMultiSliceReader(
+final class FourMcCSVMultiSliceReader(
     slices: Seq[PartitionedFile],
     dataSchema: StructType,
     parsedOptions: CSVOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReader[InternalRow] {
   private var idx = 0
-  private var current: FourMcCsvSliceReader = _
+  private var current: FourMcCSVSliceReader = _
 
   @tailrec
   override def next(): Boolean = {
     if (current == null) {
       if (idx >= slices.length) return false
-      current = new FourMcCsvSliceReader(slices(idx), dataSchema, parsedOptions, broadcastConf.value.value)
+      current = new FourMcCSVSliceReader(slices(idx), dataSchema, parsedOptions, broadcastConf.value.value)
       idx += 1
     }
     if (current.next()) true else {
-      current.close();
-      current = null;
-      next()
+      current.close(); current = null; next()
     }
   }
 
@@ -133,7 +133,7 @@ final class FourMcCsvMultiSliceReader(
   override def close(): Unit = if (current != null) current.close()
 }
 
-final class FourMcCsvSliceReader(
+final class FourMcCSVSliceReader(
     pf: PartitionedFile,
     dataSchema: StructType,
     csvOpts: CSVOptions,
@@ -152,9 +152,8 @@ final class FourMcCsvSliceReader(
   override def next(): Boolean = {
     // Drop header on the very first slice start of a file if requested
     if (!headerSkipped && csvOpts.headerFlag && pf.start == 0L) {
-      // skip one record if present
       if (delegate.next()) {
-        // discard
+        /* discard one header record */
       }
       headerSkipped = true
     }
@@ -162,8 +161,7 @@ final class FourMcCsvSliceReader(
       val v = delegate.get().getUTF8String(0).toString
       val parsed = parser.parse(v)
       if (parsed.isDefined) {
-        current = parsed.get;
-        return true
+        current = parsed.get; return true
       }
     }
     false

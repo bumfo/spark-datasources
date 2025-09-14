@@ -1,3 +1,3 @@
 org.apache.spark.sql.fourmc.FourMcFileDataSource
-org.apache.spark.sql.fourmc.csv.FourMcCsvFileDataSource
+org.apache.spark.sql.fourmc.csv.FourMcCSVFileDataSource
 org.apache.spark.sql.fourmc.json.FourMcJsonFileDataSource
