@@ -94,7 +94,7 @@ class FourMcTable(
    * types (e.g., String, Int, Long) and user-defined types that reduce to
    * atomic types.
    */
-  override final def supportsDataType(dataType: DataType): Boolean = supportsDataType0(dataType)
+  override def supportsDataType(dataType: DataType): Boolean = supportsDataType0(dataType)
 
   @tailrec
   private final def supportsDataType0(dataType: DataType): Boolean = dataType match {
