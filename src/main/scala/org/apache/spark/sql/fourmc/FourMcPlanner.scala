@@ -4,12 +4,11 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
-import org.apache.spark.sql.execution.datasources.FileScanRDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.execution.PartitionedFileUtil
-import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
+import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.{Dataset, Encoders, SparkSession}
@@ -124,8 +123,7 @@ case class FourMcPlanner(
       readFunction,
       parts
     )
-    val df = spark.internalCreateDataFrame(rdd, dataSchema)
-    df.select("value").as[String](Encoders.STRING)
+    val df = spark.internalCreateDataFrame(rdd, dataSchema).as(Encoders.STRING)
   }
 }
 
