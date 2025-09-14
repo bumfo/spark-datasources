@@ -56,6 +56,8 @@ class FourMcCSVTable(
       .inferFromDataset(sparkSession, ds, first, parsed)
     Some(struct)
   }
+
+  override def formatName: String = "FOURMC_CSV"
 }
 
 final class FourMcCSVScanBuilder(
