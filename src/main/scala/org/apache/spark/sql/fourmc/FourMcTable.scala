@@ -34,7 +34,6 @@ class FourMcTable(
     val userSpecifiedSchema: Option[StructType],
     val fallbackFileFormat: Class[_ <: FileFormat]
 ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
-
   protected lazy val planner: FourMcPlanner = {
     val br = sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
     FourMcPlanner(sparkSession, fileIndex, options, fileIndex.partitionSchema, Seq.empty, Seq.empty, br)

@@ -164,6 +164,9 @@ class FourMcScan(
       partitionFilters: Seq[Expression],
       dataFilters: Seq[Expression]
   ): FileScan = {
+    // 4mc does not support filter pushdown/pruning. Preserve the original planner
+    // (and thus cached file partitions) and only record filters for Spark to
+    // apply after reading.
     new FourMcScan(
       sparkSession,
       fileIndex,
@@ -172,7 +175,7 @@ class FourMcScan(
       readPartitionSchema,
       partitionFilters,
       dataFilters,
-      planner.copy(partitionFilters = partitionFilters, dataFilters = dataFilters)
+      planner
     )
   }
 }
