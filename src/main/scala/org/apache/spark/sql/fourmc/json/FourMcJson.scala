@@ -4,7 +4,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JacksonParser}
+import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JSONOptionsInRead, JacksonParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.fourmc.{FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcTable}
@@ -17,7 +17,6 @@ import org.apache.spark.util.SerializableConfiguration
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
 
-/** DataSource short name fourmc.json */
 final class FourMcJsonFileDataSource extends FourMcSchemaAwareDataSource {
   override def shortName(): String = "fourmc.json"
 
@@ -47,7 +46,7 @@ class FourMcJsonTable(
     new FourMcJsonScanBuilder(sparkSession, fileIndex, options, schema)
 
   override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
-    val parsedOptions = new org.apache.spark.sql.catalyst.json.JSONOptionsInRead(
+    val parsedOptions = new JSONOptionsInRead(
       options.asScala.toMap,
       sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord
@@ -154,8 +153,7 @@ final class FourMcJsonSliceReader(
       val rows = parser.parse[UTF8String](v, CreateJacksonParser.utf8String, identity)
       val it = rows.iterator
       if (it.hasNext) {
-        current = it.next();
-        return true
+        current = it.next(); return true
       }
     }
     false
