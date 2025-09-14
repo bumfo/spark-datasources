@@ -119,22 +119,7 @@ case class FourMcPlanner(
     val rdd: RDD[String] = sc.parallelize(parts, parts.size.max(1)).mapPartitions { fpIter =>
       fpIter.flatMap { fp =>
         val reader = factory.createReader(fp)
-        new Iterator[String] {
-          private var open = true
-          private var hasNextRow = reader.next()
-
-          override def hasNext: Boolean = open && hasNextRow
-
-          override def next(): String = {
-            val row = reader.get()
-            val s = row.getUTF8String(0).toString
-            hasNextRow = reader.next()
-            if (!hasNextRow) {
-              reader.close(); open = false
-            }
-            s
-          }
-        }
+        FourMcPlanner.iteratorFromReader(reader).map(_.getUTF8String(0).toString)
       }
     }
     spark.createDataset(rdd)(Encoders.STRING)
@@ -217,5 +202,26 @@ object FourMcPlanner {
     }
 
     slices.toSeq
+  }
+
+  /** Convert a PartitionReader into an Iterator that auto-closes on exhaustion. */
+
+  import org.apache.spark.sql.catalyst.InternalRow
+  import org.apache.spark.sql.connector.read.PartitionReader
+
+  def iteratorFromReader(reader: PartitionReader[InternalRow]): Iterator[InternalRow] = new Iterator[InternalRow] {
+    private var open = true
+    private var hasNextRow = reader.next()
+
+    override def hasNext: Boolean = open && hasNextRow
+
+    override def next(): InternalRow = {
+      val row = reader.get()
+      hasNextRow = reader.next()
+      if (!hasNextRow) {
+        reader.close(); open = false
+      }
+      row
+    }
   }
 }
