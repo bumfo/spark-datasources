@@ -114,13 +114,9 @@ case class FourMcPlanner(
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
     val parts = filePartitions.map(_.asInstanceOf[FilePartition]).toSeq
     val dataSchema = StructType(Array(StructField("value", StringType, nullable = true)))
-    val readFunction: PartitionedFile => Iterator[InternalRow] = { pf =>
-      val reader = new FourMcSliceReader(pf, dataSchema, withOffset = false, broadcastConf.value.value)
-      FourMcPlanner.iteratorFromReader(reader)
-    }
     val rdd: RDD[InternalRow] = new FileScanRDD(
       spark,
-      readFunction,
+      FourMcPlanner.readFunction(broadcastConf, dataSchema),
       parts
     )
     spark.internalCreateDataFrame(rdd, dataSchema).as(Encoders.STRING)
