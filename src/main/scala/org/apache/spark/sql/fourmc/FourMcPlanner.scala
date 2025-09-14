@@ -1,15 +1,12 @@
 package org.apache.spark.sql.fourmc
 
-import com.fing.mapreduce.FourMcLineRecordReader
 import org.apache.hadoop.fs.{FileSystem, Path}
-import org.apache.hadoop.io.Text
-import org.apache.hadoop.mapreduce.TaskAttemptID
-import org.apache.hadoop.mapreduce.lib.input.FileSplit
-import org.apache.hadoop.mapreduce.task.TaskAttemptContextImpl
+import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
+import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.types.StructType
@@ -49,7 +46,7 @@ case class FourMcPlanner(
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /** Compute FilePartitions by expanding 4mc slices and coalescing by target size. */
-  lazy val filePartitions: Array[org.apache.spark.sql.connector.read.InputPartition] = {
+  lazy val filePartitions: Array[InputPartition] = {
     val selectedPartitions = fileIndex.listFiles(partitionFilters, dataFilters)
 
     val partitionAttributes: Seq[Attribute] = fileIndex.partitionSchema.toAttributes
@@ -113,35 +110,29 @@ case class FourMcPlanner(
     FilePartition.getFilePartitions(spark, slices, maxSplitBytes).toArray
   }
 
-  /** Build a Dataset[String] reading lines from planned slices using 4mc reader. */
+  /** Build a Dataset[String] reading lines from planned partitions using our shared reader. */
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
     val sc = spark.sparkContext
     val parts = filePartitions.map(_.asInstanceOf[FilePartition]).toSeq
-    val confBc = broadcastConf
+    val dataSchema = StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)))
+    val factory = new FourMcPartitionReaderFactory(dataSchema, withOffset = false, broadcastConf)
     val rdd: RDD[String] = sc.parallelize(parts, parts.size.max(1)).mapPartitions { fpIter =>
       fpIter.flatMap { fp =>
-        fp.files.iterator.flatMap { pf =>
-          val conf = confBc.value.value
-          val path = new Path(pf.filePath)
-          val split = new FileSplit(path, pf.start, pf.length, Array.empty)
-          val ctx = new TaskAttemptContextImpl(conf, new TaskAttemptID())
-          val reader = new FourMcLineRecordReader()
-          reader.initialize(split, ctx)
-          new Iterator[String] {
-            private var open = true
-            private var hasNextKV: Boolean = reader.nextKeyValue()
+        val reader = factory.createReader(fp)
+        new Iterator[String] {
+          private var open = true
+          private var hasNextRow = reader.next()
 
-            override def hasNext: Boolean = open && hasNextKV
+          override def hasNext: Boolean = open && hasNextRow
 
-            override def next(): String = {
-              val v: Text = reader.getCurrentValue
-              val s = v.toString
-              hasNextKV = reader.nextKeyValue()
-              if (!hasNextKV) {
-                reader.close(); open = false
-              }
-              s
+          override def next(): String = {
+            val row = reader.get()
+            val s = row.getUTF8String(0).toString
+            hasNextRow = reader.next()
+            if (!hasNextRow) {
+              reader.close(); open = false
             }
+            s
           }
         }
       }
@@ -204,7 +195,7 @@ object FourMcPlanner {
     val numTasks = math.min(files.size, math.max(1, parallelismMax))
     val rdd = sc.parallelize(files, numTasks)
 
-    val previous = sc.getLocalProperty(org.apache.spark.SparkContext.SPARK_JOB_DESCRIPTION)
+    val previous = sc.getLocalProperty(SparkContext.SPARK_JOB_DESCRIPTION)
     val desc = files.size match {
       case 0 => "FourMc: expand slices for 0 files"
       case 1 => s"FourMc: expand slices for 1 file:<br/>${files.head._1}"
