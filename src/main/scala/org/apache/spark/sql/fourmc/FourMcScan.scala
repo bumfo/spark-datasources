@@ -163,19 +163,22 @@ class FourMcScan(
   override def withFilters(
       partitionFilters: Seq[Expression],
       dataFilters: Seq[Expression]
-  ): FileScan = {
-    // 4mc does not support filter pushdown/pruning. Preserve the original planner
-    // (and thus cached file partitions) and only record filters for Spark to
-    // apply after reading.
-    new FourMcScan(
-      sparkSession,
-      fileIndex,
-      readDataSchema,
-      options,
-      readPartitionSchema,
-      partitionFilters,
-      dataFilters,
-      planner
-    )
+  ): this.type = {
+    // for subclasses to work
+    this
+
+    // // 4mc does not support filter pushdown/pruning. Preserve the original planner
+    // // (and thus cached file partitions) and only record filters for Spark to
+    // // apply after reading.
+    // new FourMcScan(
+    //   sparkSession,
+    //   fileIndex,
+    //   readDataSchema,
+    //   options,
+    //   readPartitionSchema,
+    //   partitionFilters,
+    //   dataFilters,
+    //   planner
+    // )
   }
 }
