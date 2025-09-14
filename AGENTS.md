@@ -52,6 +52,11 @@
   - `rm -f .git/index.lock && git add <files> && git commit -m "..."`
   - Use only when you’re sure no other Git process is running.
 
+### Spark Jobs: Closure Tips
+- Keep Spark closures small; avoid capturing non‑serializable state.
+- Lambdas in classes capture the whole instance. Put job code in companions.
+- Capture only serializable inputs (e.g., broadcast Hadoop conf, schema), not `SparkSession` or table objects.
+
 ### Referencing Spark 3.2.1 Sources
 - Find file paths in the Spark SQL sources JAR:
   - `jar tf ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar | grep FileScan.scala`
