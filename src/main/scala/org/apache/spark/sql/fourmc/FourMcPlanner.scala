@@ -9,7 +9,7 @@ import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.connector.read.InputPartition
 import org.apache.spark.sql.execution.PartitionedFileUtil
 import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, PartitionedFile, PartitioningAwareFileIndex}
-import org.apache.spark.sql.types.StructType
+import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.{Dataset, Encoders, SparkSession}
 import org.apache.spark.util.SerializableConfiguration
@@ -113,7 +113,7 @@ case class FourMcPlanner(
   /** Build a Dataset[String] reading lines from planned partitions using FileScanRDD. */
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
     val parts = filePartitions.map(_.asInstanceOf[FilePartition]).toSeq
-    val dataSchema = StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)))
+    val dataSchema = StructType(Array(StructField("value", StringType, nullable = true)))
     val readFunction: PartitionedFile => Iterator[InternalRow] = { pf =>
       val reader = new FourMcSliceReader(pf, dataSchema, withOffset = false, broadcastConf.value.value)
       FourMcPlanner.iteratorFromReader(reader)
