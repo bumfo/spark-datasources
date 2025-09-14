@@ -4,6 +4,7 @@ import org.apache.hadoop.fs.{FileSystem, Path}
 import org.apache.spark.SparkContext
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.rdd.RDD
+import org.apache.spark.sql.execution.datasources.FileScanRDD
 import org.apache.spark.sql.catalyst.InternalRow
 import org.apache.spark.sql.catalyst.expressions.{Attribute, Expression}
 import org.apache.spark.sql.connector.read.InputPartition
@@ -110,19 +111,21 @@ case class FourMcPlanner(
     FilePartition.getFilePartitions(spark, slices, maxSplitBytes).toArray
   }
 
-  /** Build a Dataset[String] reading lines from planned partitions using our shared reader. */
+  /** Build a Dataset[String] reading lines from planned partitions using FileScanRDD. */
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
-    val sc = spark.sparkContext
     val parts = filePartitions.map(_.asInstanceOf[FilePartition]).toSeq
     val dataSchema = StructType(Seq(org.apache.spark.sql.types.StructField("value", org.apache.spark.sql.types.StringType, nullable = true)))
-    val factory = new FourMcPartitionReaderFactory(dataSchema, withOffset = false, broadcastConf)
-    val rdd: RDD[String] = sc.parallelize(parts, parts.size.max(1)).mapPartitions { fpIter =>
-      fpIter.flatMap { fp =>
-        val reader = factory.createReader(fp)
-        FourMcPlanner.iteratorFromReader(reader).map(_.getUTF8String(0).toString)
-      }
+    val readFunction: PartitionedFile => Iterator[InternalRow] = { pf =>
+      val reader = new FourMcSliceReader(pf, dataSchema, withOffset = false, broadcastConf.value.value)
+      FourMcPlanner.iteratorFromReader(reader)
     }
-    spark.createDataset(rdd)(Encoders.STRING)
+    val rdd: RDD[InternalRow] = new FileScanRDD(
+      spark,
+      readFunction,
+      parts
+    )
+    val df = spark.internalCreateDataFrame(rdd, dataSchema)
+    df.select("value").as[String](Encoders.STRING)
   }
 }
 
@@ -175,8 +178,8 @@ object FourMcPlanner {
       confBroadcast: Broadcast[SerializableConfiguration],
       maxSplitBytes: Long,
       parallelismMax: Int
-  ): Array[Slice] = {
-    if (files.isEmpty) return Seq.empty
+  ): Seq[Slice] = {
+    if (files.isEmpty) return Seq.empty[Slice]
     val numTasks = math.min(files.size, math.max(1, parallelismMax))
     val rdd = sc.parallelize(files, numTasks)
 
@@ -201,7 +204,7 @@ object FourMcPlanner {
       sc.setJobDescription(previous)
     }
 
-    slices
+    slices.toSeq
   }
 
   /** Convert a PartitionReader into an Iterator that auto-closes on exhaustion. */
