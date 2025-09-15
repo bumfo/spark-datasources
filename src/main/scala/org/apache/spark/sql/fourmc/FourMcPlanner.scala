@@ -52,7 +52,7 @@ case class FourMcPlanner(
 
   // local option: fourmc.maxPartitionBytes, defaulting to the spark option above
   private val fourmcMaxPartitionBytes: Long =
-    Option(options.get("fourmc.maxPartitionBytes")).map(_.toLong).getOrElse(sparkFourMcMaxPartitionBytes)
+    Option(options.get("fourmc.maxPartitionBytes")).map(Utils.byteStringAsBytes).getOrElse(sparkFourMcMaxPartitionBytes)
 
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
