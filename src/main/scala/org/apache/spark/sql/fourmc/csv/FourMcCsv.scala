@@ -116,12 +116,12 @@ final class FourMcCSVPartitionReaderFactory(
 ) extends PartitionReaderFactory {
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     val fp = partition.asInstanceOf[FilePartition]
-    new FourMcCSVMultiSliceReader(fp.files.toSeq, dataSchema, parsedOptions, broadcastConf)
+    new FourMcCSVMultiSliceReader(fp.files, dataSchema, parsedOptions, broadcastConf)
   }
 }
 
 final class FourMcCSVMultiSliceReader(
-    slices: Seq[PartitionedFile],
+    slices: Array[PartitionedFile],
     dataSchema: StructType,
     parsedOptions: CSVOptions,
     broadcastConf: Broadcast[SerializableConfiguration]

@@ -126,12 +126,12 @@ final class FourMcJsonPartitionReaderFactory(
 ) extends PartitionReaderFactory {
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     val fp = partition.asInstanceOf[FilePartition]
-    new FourMcJsonMultiSliceReader(fp.files.toSeq, dataSchema, parsedOptions, broadcastConf)
+    new FourMcJsonMultiSliceReader(fp.files, dataSchema, parsedOptions, broadcastConf)
   }
 }
 
 final class FourMcJsonMultiSliceReader(
-    slices: Seq[PartitionedFile],
+    slices: Array[PartitionedFile],
     dataSchema: StructType,
     parsedOptions: JSONOptions,
     broadcastConf: Broadcast[SerializableConfiguration]
