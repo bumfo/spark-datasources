@@ -8,8 +8,6 @@ import org.apache.spark.sql.types.StructType
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.util.SerializableConfiguration
 
-import java.util.Locale
-
 /**
  * Builder for 4mc scans.  Similar to CSVScanBuilder, it accepts Spark's
  * internal FileIndex and schemas, then produces a [[FourMcScan]] when
@@ -104,21 +102,6 @@ abstract class FourMcScan(
   private val broadcastConf: Broadcast[SerializableConfiguration] =
     sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
 
-  // Maximum bytes per partition used when expanding 4mc block slices.
-  private val maxPartitionBytes: Long = sparkSession.sessionState.conf.filesMaxPartitionBytes
-
-  // Match FileScan's case-sensitivity and name normalization logic
-  private val isCaseSensitive = sparkSession.sessionState.conf.caseSensitiveAnalysis
-  // Parallel expand configuration (defaults to Spark's discovery settings)
-  private val parallelExpandEnabled: Boolean =
-    java.lang.Boolean.parseBoolean(options.getOrDefault("fourmc.parallelExpand.enabled", "true"))
-  private val parallelExpandThreshold: Int =
-    Option(options.get("fourmc.parallelExpand.threshold")).map(_.toInt)
-      .getOrElse(sparkSession.sessionState.conf.parallelPartitionDiscoveryThreshold)
-  private val parallelExpandMax: Int =
-    Option(options.get("fourmc.parallelExpand.maxParallelism")).map(_.toInt)
-      .getOrElse(sparkSession.sessionState.conf.parallelPartitionDiscoveryParallelism)
-
   /**
    * Human-readable description used in the query plan.  This appears in the
    * physical plan and helps users understand that a 4mc-specific scan is
@@ -140,8 +123,6 @@ abstract class FourMcScan(
    * Spark's helper to balance task sizes.
    */
   override def planInputPartitions: Array[InputPartition] = planner.filePartitions
-
-  private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /**
    * Provide a reader factory that will create readers per input partition.  A

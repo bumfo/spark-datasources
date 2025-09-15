@@ -16,21 +16,15 @@ abstract class FourMcSchemaAwareDataSource extends FourMcFileDataSource {
       paths: Seq[String],
       userSpecifiedSchema: Option[StructType]): Table
 
-  override def getTable(options: CaseInsensitiveStringMap): Table = {
+  override final def getTable(options: CaseInsensitiveStringMap): Table = getTable(options, null)
+
+  override final def getTable(options: CaseInsensitiveStringMap, schema: StructType): Table = {
     val paths = parsePaths(options)
     require(paths.nonEmpty, "Option 'path' or 'paths' must be specified")
     val cleaned = dropPathOptions(options)
     val tableName = computeTableName(paths)
-    createTable(tableName, cleaned, paths, None)
+    createTable(tableName, cleaned, paths, Option(schema))
   }
 
-  override def getTable(options: CaseInsensitiveStringMap, schema: StructType): Table = {
-    val paths = parsePaths(options)
-    require(paths.nonEmpty, "Option 'path' or 'paths' must be specified")
-    val cleaned = dropPathOptions(options)
-    val tableName = computeTableName(paths)
-    createTable(tableName, cleaned, paths, Some(schema))
-  }
-
-  override def supportsExternalMetadata(): Boolean = true
+  override final def supportsExternalMetadata(): Boolean = true
 }
