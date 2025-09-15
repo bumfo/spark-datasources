@@ -75,8 +75,8 @@ case class FourMcPlanner(
       org.apache.spark.sql.catalyst.expressions.codegen.GenerateUnsafeProjection
         .generate(readPartitionAttributes, partitionAttributes)
 
-    val allFiles = selectedPartitions.flatMap(_.files)
-    val useParallel = parallelExpandEnabled && allFiles.size >= parallelExpandThreshold
+    val allFiles = selectedPartitions.iterator.flatMap(_.files).toArray
+    val useParallel = parallelExpandEnabled && allFiles.length >= parallelExpandThreshold
 
     val slices: Array[PartitionedFile] = if (useParallel) {
       val partValuesByPath = mutable.HashMap.empty[String, org.apache.spark.sql.catalyst.InternalRow]
@@ -106,7 +106,7 @@ case class FourMcPlanner(
         val pv = partValuesByPath.getOrElse(s.path, empty)
         val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
         PartitionedFile(pv, s.path, s.start, s.length, hosts)
-      }.toArray
+      }
     } else {
       selectedPartitions.iterator.flatMap { partition =>
         val partitionValues = if (readPartitionAttributes != partitionAttributes) {
@@ -135,7 +135,7 @@ case class FourMcPlanner(
 
   /** Build a Dataset[String] reading lines from planned partitions using FileScanRDD. */
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
-    val parts = filePartitions.map(_.asInstanceOf[FilePartition]).toSeq
+    val parts = filePartitions.map(_.asInstanceOf[FilePartition])
     val dataSchema = StructType(Array(StructField("value", StringType, nullable = true)))
     val rdd: RDD[InternalRow] = new FileScanRDD(
       spark,
@@ -191,17 +191,17 @@ object FourMcPlanner {
 
   def expandWithSparkJob(
       sc: org.apache.spark.SparkContext,
-      files: Seq[(String, Long)],
+      files: Array[(String, Long)],
       confBroadcast: Broadcast[SerializableConfiguration],
       maxSplitBytes: Long,
       parallelismMax: Int
-  ): Seq[Slice] = {
-    if (files.isEmpty) return Seq.empty[Slice]
-    val numTasks = math.min(files.size, math.max(1, parallelismMax))
+  ): Array[Slice] = {
+    if (files.isEmpty) return Array.empty[Slice]
+    val numTasks = math.min(files.length, math.max(1, parallelismMax))
     val rdd = sc.parallelize(files, numTasks)
 
     val previous = sc.getLocalProperty(SparkContext.SPARK_JOB_DESCRIPTION)
-    val desc = files.size match {
+    val desc = files.length match {
       case 0 => "FourMc: expand slices for 0 files"
       case 1 => s"FourMc: expand slices for 1 file:<br/>${files.head._1}"
       case n => s"FourMc: expand slices for $n files:<br/>${files.head._1}, ..."
@@ -221,7 +221,7 @@ object FourMcPlanner {
       sc.setJobDescription(previous)
     }
 
-    slices.toSeq
+    slices
   }
 
   /** Convert a PartitionReader into an Iterator that auto-closes on exhaustion. */

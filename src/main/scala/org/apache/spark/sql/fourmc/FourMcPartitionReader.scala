@@ -43,7 +43,7 @@ final class FourMcPartitionReaderFactory(
  * exhausts, the reader closes it and advances to the next.
  */
 final class FourMcMultiSliceReader(
-    slices: Seq[PartitionedFile],
+    slices: Array[PartitionedFile],
     dataSchema: StructType,
     withOffset: Boolean,
     broadcastConf: Broadcast[SerializableConfiguration]
