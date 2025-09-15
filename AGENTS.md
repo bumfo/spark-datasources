@@ -67,4 +67,4 @@
 
 ### Scala-Java Interop Tips
 - **In-place array shuffle:** Use `Collections.shuffle(Arrays.asList(array: _*))` for efficient mutable shuffling of object arrays in Scala. Doesn't work with primitive arrays.
-- **Collection performance:** Use `collection.iterator.map(f).filter(p).toArray` instead of eager chains; avoid `Seq(...)`, `toList` and `iterator.toSeq` in Scala 2.12 (slow linked list/Stream).
+- **Collection performance:** Use `collection.iterator.map(f).filter(p).toArray` instead of eager chains; avoid `Seq(...)`, `toList` and `iterator.toSeq` in Scala 2.12 (slow linked list/Stream). ArrayBuffer or array.toSeq are acceptable (both backed by arrays).
