@@ -4,7 +4,7 @@ import org.apache.hadoop.conf.Configuration
 import org.apache.spark.broadcast.Broadcast
 import org.apache.spark.sql.SparkSession
 import org.apache.spark.sql.catalyst.InternalRow
-import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JSONOptionsInRead, JacksonParser}
+import org.apache.spark.sql.catalyst.json.{CreateJacksonParser, JSONOptions, JacksonParser}
 import org.apache.spark.sql.connector.read.{InputPartition, PartitionReader, PartitionReaderFactory, Scan}
 import org.apache.spark.sql.execution.datasources.{FilePartition, PartitionedFile, PartitioningAwareFileIndex}
 import org.apache.spark.sql.fourmc.{FourMcPlanner, FourMcScan, FourMcScanBuilder, FourMcSchemaAwareDataSource, FourMcTable}
@@ -46,11 +46,6 @@ class FourMcJsonTable(
     new FourMcJsonScanBuilder(sparkSession, fileIndex, options, schema, planner)
 
   override def inferSchema(files: Seq[org.apache.hadoop.fs.FileStatus]): Option[StructType] = {
-    val parsedOptionsInRead = new JSONOptionsInRead(
-      options.asScala.toMap,
-      sparkSession.sessionState.conf.sessionLocalTimeZone,
-      sparkSession.sessionState.conf.columnNameOfCorruptRecord
-    )
     val parsed = new JSONOptions(options.asScala.toMap, sparkSession.sessionState.conf.sessionLocalTimeZone,
       sparkSession.sessionState.conf.columnNameOfCorruptRecord)
     val ds = planner.datasetOfLines(parsed.encoding)
@@ -83,7 +78,7 @@ final class FourMcJsonScanBuilder(
 ) extends FourMcScanBuilder(spark, fileIndex, opts, planner) {
   override lazy val build: Scan = {
     val partitionSchema = fileIndex.partitionSchema
-    new FourMcJsonScan(
+    FourMcJsonScan(
       spark,
       fileIndex,
       readSchema,
@@ -147,8 +142,8 @@ final class FourMcJsonMultiSliceReader(
       idx += 1
     }
     if (current.next()) true else {
-      current.close();
-      current = null;
+      current.close()
+      current = null
       next()
     }
   }
@@ -179,7 +174,7 @@ final class FourMcJsonSliceReader(
       val rows = parser.parse[UTF8String](v, CreateJacksonParser.utf8String, identity)
       val it = rows.iterator
       if (it.hasNext) {
-        current = it.next();
+        current = it.next()
         return true
       }
     }

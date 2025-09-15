@@ -69,7 +69,7 @@ final class FourMcCSVScanBuilder(
 ) extends FourMcScanBuilder(spark, fileIndex, opts, planner) {
   override lazy val build: Scan = {
     val partitionSchema = fileIndex.partitionSchema
-    new FourMcCSVScan(
+    FourMcCSVScan(
       spark,
       fileIndex,
       readSchema,
@@ -137,8 +137,8 @@ final class FourMcCSVMultiSliceReader(
       idx += 1
     }
     if (current.next()) true else {
-      current.close();
-      current = null;
+      current.close()
+      current = null
       next()
     }
   }
@@ -176,7 +176,7 @@ final class FourMcCSVSliceReader(
       val v = delegate.get().getUTF8String(0).toString
       val parsed = parser.parse(v)
       if (parsed.isDefined) {
-        current = parsed.get;
+        current = parsed.get
         return true
       }
     }
