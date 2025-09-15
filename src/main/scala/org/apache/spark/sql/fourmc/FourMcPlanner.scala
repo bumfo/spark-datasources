@@ -14,7 +14,7 @@ import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.{Dataset, Encoders, SparkSession}
 import org.apache.spark.util.{SerializableConfiguration, Utils}
 
-import java.util.Locale
+import java.util.{Arrays, Collections, Locale}
 import scala.collection.mutable
 
 case class FourMcPlanner(
@@ -54,6 +54,10 @@ case class FourMcPlanner(
   private val fourmcMaxPartitionBytes: Long =
     Option(options.get("fourmc.maxPartitionBytes")).map(Utils.byteStringAsBytes).getOrElse(sparkFourMcMaxPartitionBytes)
 
+  // option to shuffle slices instead of sorting by size (default: false, sort by size)
+  private val shuffleSlices: Boolean =
+    java.lang.Boolean.parseBoolean(options.getOrDefault("fourmc.shuffleSlices", "false"))
+
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /** Compute FilePartitions by expanding 4mc slices and coalescing by target size. */
@@ -74,7 +78,7 @@ case class FourMcPlanner(
     val allFiles = selectedPartitions.flatMap(_.files)
     val useParallel = parallelExpandEnabled && allFiles.size >= parallelExpandThreshold
 
-    val slices: Seq[PartitionedFile] = if (useParallel) {
+    val slices: Array[PartitionedFile] = if (useParallel) {
       val partValuesByPath = mutable.HashMap.empty[String, org.apache.spark.sql.catalyst.InternalRow]
       val hostsByPath = mutable.HashMap.empty[String, Array[String]]
       selectedPartitions.foreach { partition =>
@@ -102,7 +106,7 @@ case class FourMcPlanner(
         val pv = partValuesByPath.getOrElse(s.path, empty)
         val hosts = hostsByPath.getOrElse(s.path, Array.empty[String])
         PartitionedFile(pv, s.path, s.start, s.length, hosts)
-      }.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+      }.toArray
     } else {
       selectedPartitions.iterator.flatMap { partition =>
         val partitionValues = if (readPartitionAttributes != partitionAttributes) {
@@ -115,7 +119,15 @@ case class FourMcPlanner(
           val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
           FourMcPlanner.expandPartitionedFile(base, math.min(fourmcMaxPartitionBytes, maxSplitBytes), broadcastConf)
         }
-      }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
+      }.toArray
+    }
+
+    // Apply shuffle or sort in mutable style
+    if (shuffleSlices) {
+      // Use Java Collections.shuffle with varargs expansion for true in-place shuffle
+      Collections.shuffle(Arrays.asList(slices: _*))
+    } else {
+      scala.util.Sorting.quickSort(slices)(implicitly[Ordering[Long]].reverse.on[PartitionedFile](_.length))
     }
 
     FilePartition.getFilePartitions(spark, slices, maxSplitBytes).toArray
