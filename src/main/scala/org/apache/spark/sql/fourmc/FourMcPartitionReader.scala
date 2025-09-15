@@ -50,7 +50,6 @@ final class FourMcMultiSliceReader(
 ) extends PartitionReader[InternalRow] {
 
   private val conf: Configuration = broadcastConf.value.value
-  private val row = new GenericInternalRow(dataSchema.length)
   private var sliceIndex = 0
   private var current: FourMcSliceReader = _
 

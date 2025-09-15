@@ -125,6 +125,7 @@ case class FourMcPlanner(
     // Apply shuffle or sort in mutable style
     if (shuffleSlices) {
       // Use Java Collections.shuffle with varargs expansion for true in-place shuffle
+      // noinspection ReferenceMustBePrefixed
       Collections.shuffle(Arrays.asList(slices: _*))
     } else {
       scala.util.Sorting.quickSort(slices)(implicitly[Ordering[Long]].reverse.on[PartitionedFile](_.length))
@@ -134,6 +135,7 @@ case class FourMcPlanner(
   }
 
   /** Build a Dataset[String] reading lines from planned partitions using FileScanRDD. */
+  // noinspection ScalaUnusedSymbol
   def datasetOfLines(charsetOpt: Option[String]): Dataset[String] = {
     val parts = filePartitions.map(_.asInstanceOf[FilePartition])
     val dataSchema = StructType(Array(StructField("value", StringType, nullable = true)))
@@ -239,7 +241,7 @@ object FourMcPlanner {
       val row = reader.get()
       hasNextRow = reader.next()
       if (!hasNextRow) {
-        reader.close();
+        reader.close()
         open = false
       }
       row
