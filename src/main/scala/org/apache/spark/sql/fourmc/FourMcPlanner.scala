@@ -12,7 +12,7 @@ import org.apache.spark.sql.execution.datasources.{FilePartition, FileScanRDD, P
 import org.apache.spark.sql.types.{StringType, StructField, StructType}
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
 import org.apache.spark.sql.{Dataset, Encoders, SparkSession}
-import org.apache.spark.util.SerializableConfiguration
+import org.apache.spark.util.{SerializableConfiguration, Utils}
 
 import java.util.Locale
 import scala.collection.mutable
@@ -47,7 +47,7 @@ case class FourMcPlanner(
   private val sparkFourMcMaxPartitionBytes: Long =
     spark.conf
       .getOption("spark.sql.files.fourmc.maxPartitionBytes")
-      .map(_.toLong)
+      .map(Utils.byteStringAsBytes)
       .getOrElse(spark.sessionState.conf.filesMaxPartitionBytes)
 
   // local option: fourmc.maxPartitionBytes, defaulting to the spark option above
