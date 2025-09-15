@@ -64,3 +64,6 @@
 - Print a source file to the terminal:
   - `unzip -p ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar org/apache/spark/sql/execution/datasources/v2/FileScan.scala | sed -n '1,200p'`
 - Tip: use `rg` instead of `grep` if available for faster search.
+
+### Scala-Java Interop Tips
+- **In-place array shuffle:** Use `Collections.shuffle(Arrays.asList(array: _*))` for efficient mutable shuffling of object arrays in Scala. Doesn't work with primitive arrays.
