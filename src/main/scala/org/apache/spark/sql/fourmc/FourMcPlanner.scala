@@ -43,6 +43,17 @@ case class FourMcPlanner(
 
   private val maxSplitBytes: Long = FilePartition.maxSplitBytes(spark, fileIndex.listFiles(Seq.empty, Seq.empty))
 
+  // spark option: spark.sql.files.fourmc.maxPartitionBytes with default from SQLConf.filesMaxPartitionBytes
+  private val sparkFourMcMaxPartitionBytes: Long =
+    spark.conf
+      .getOption("spark.sql.files.fourmc.maxPartitionBytes")
+      .map(_.toLong)
+      .getOrElse(spark.sessionState.conf.filesMaxPartitionBytes)
+
+  // local option: fourmc.maxPartitionBytes, defaulting to the spark option above
+  private val fourmcMaxPartitionBytes: Long =
+    Option(options.get("fourmc.maxPartitionBytes")).map(_.toLong).getOrElse(sparkFourMcMaxPartitionBytes)
+
   private def normalizeName(name: String): String = if (isCaseSensitive) name else name.toLowerCase(Locale.ROOT)
 
   /** Compute FilePartitions by expanding 4mc slices and coalescing by target size. */
@@ -83,7 +94,7 @@ case class FourMcPlanner(
         spark.sparkContext,
         pairs,
         broadcastConf,
-        maxSplitBytes,
+        math.min(fourmcMaxPartitionBytes, maxSplitBytes),
         parallelExpandMax
       )
       val empty = InternalRow(Array.empty)
@@ -102,7 +113,7 @@ case class FourMcPlanner(
         partition.files.iterator.flatMap { file =>
           val filePath = file.getPath
           val base = PartitionedFileUtil.getPartitionedFile(file, filePath, partitionValues)
-          FourMcPlanner.expandPartitionedFile(base, maxSplitBytes, broadcastConf)
+          FourMcPlanner.expandPartitionedFile(base, math.min(fourmcMaxPartitionBytes, maxSplitBytes), broadcastConf)
         }
       }.toArray.sortBy(_.length)(implicitly[Ordering[Long]].reverse)
     }
