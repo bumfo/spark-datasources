@@ -35,7 +35,6 @@ own libraries remain `provided`.
 val df = spark.read
   .format("fourmc")
   .option("paths", "/data/logs/*.4mc")
-  .option("withOffset", "true")      // include a BIGINT byte offset column
   .option("maxPartitionBytes", "64MB")
   .load()
 
@@ -44,26 +43,23 @@ df.show(false)
 
 Accepted options:
 
-| Option | Description |
-| --- | --- |
-| `path` / `paths` | Single path or comma-separated list of files/directories.  Directories are scanned recursively; hidden files (`._`, `.`, `_`) are skipped. |
-| `withOffset` (default `false`) | When `true`, emits two columns: `offset: BIGINT` and `value: STRING`.  Otherwise only `value` is returned. |
-| `encoding` (default `UTF-8`) | Charset used to decode each line. |
-| `maxPartitionBytes` | Maximum compressed bytes per planned slice.  Defaults to `spark.sql.files.maxPartitionBytes` (128 MiB unless reconfigured). |
-| `conf.*` | Keys prefixed with `conf.` are copied directly into the Hadoop `Configuration`. |
+| Option              | Description                                                                                                                                |
+|---------------------|--------------------------------------------------------------------------------------------------------------------------------------------|
+| `path` / `paths`    | Single path or comma-separated list of files/directories.  Directories are scanned recursively; hidden files (`._`, `.`, `_`) are skipped. |
+| `maxPartitionBytes` | Maximum compressed bytes per planned slice.  Defaults to `spark.sql.files.maxPartitionBytes` (128 MiB unless reconfigured).                |
 
 ## Architecture Overview
 
 The implementation consists of a few focused classes:
 
-| Component | Purpose |
-| --- | --- |
-| `FourMcFileDataSource` | Spark entry point.  Registers the `fourmc` short name, parses `path`/`paths`, removes them from the option map, and builds a `FourMcTable`. |
-| `FourMcTable` | Extends `FileTable`, retaining Spark’s `PartitioningAwareFileIndex`.  Constructs a scan builder and caches it so repeated reads reuse the same planner. |
-| `FourMcSchemaAwareDataSource` and CSV/JSON derivatives | Provide schema-bearing datasources layered on top of the shared planner (see root README for details). |
-| `FourMcScanBuilder` | Computes the read schema (with or without offsets) and builds a `FourMcScan` carrying Spark’s partition schema. |
-| `FourMcScan` | Wraps Spark’s `FileScan`.  Delegates to the shared planner to expand each `PartitionedFile` into block-aligned slices, then materialises partitions for execution.  Filters are stored for API compatibility but not pushed down. |
-| `FourMcPlanner` | Reads the 4mc footer using `FourMcBlockIndex`, converts relative offsets to absolute positions, and groups blocks into slices capped by `maxPartitionBytes`.  The first slice begins at byte `0` and the last ends at the file length. |
+| Component                                                                       | Purpose                                                                                                                                                                                                                                                 |
+|---------------------------------------------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `FourMcFileDataSource`                                                          | Spark entry point.  Registers the `fourmc` short name, parses `path`/`paths`, removes them from the option map, and builds a `FourMcTable`.                                                                                                             |
+| `FourMcTable`                                                                   | Extends `FileTable`, retaining Spark’s `PartitioningAwareFileIndex`.  Constructs a scan builder and caches it so repeated reads reuse the same planner.                                                                                                 |
+| `FourMcSchemaAwareDataSource` and CSV/JSON derivatives                          | Provide schema-bearing datasources layered on top of the shared planner (see root README for details).                                                                                                                                                  |
+| `FourMcScanBuilder`                                                             | Computes the read schema (with or without offsets) and builds a `FourMcScan` carrying Spark’s partition schema.                                                                                                                                         |
+| `FourMcScan`                                                                    | Wraps Spark’s `FileScan`.  Delegates to the shared planner to expand each `PartitionedFile` into block-aligned slices, then materialises partitions for execution.  Filters are stored for API compatibility but not pushed down.                       |
+| `FourMcPlanner`                                                                 | Reads the 4mc footer using `FourMcBlockIndex`, converts relative offsets to absolute positions, and groups blocks into slices capped by `maxPartitionBytes`.  The first slice begins at byte `0` and the last ends at the file length.                  |
 | `FourMcPartitionReaderFactory` / `FourMcMultiSliceReader` / `FourMcSliceReader` | Execute the read path.  A multi-slice reader iterates the slices in a `FilePartition`, creating a `FourMcSliceReader` for each.  Each slice reader delegates to `FourMcLineRecordReader` and converts results to `InternalRow`s (offset + UTF8 string). |
 
 ## Design Notes & Caveats
