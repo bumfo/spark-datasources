@@ -57,20 +57,19 @@
 - Lambdas in classes capture the whole instance. Put job code in companions.
 - Capture only serializable inputs (e.g., broadcast Hadoop conf, schema), not `SparkSession` or table objects.
 
-### Rebase Checklist
-- `git fetch origin master`
-- `GIT_SEQUENCE_EDITOR="sed -i '' -e 's/^pick /edit /'" git rebase -i origin/master`
-- For each commit: adjust files to PR scope (`git restore`, `git rm`), `git commit --amend`, then `GIT_EDITOR=true git rebase --continue`; skip empty ones
-- Resolve conflicts, keeping only in-scope files; stage fixes and continue
-- After restacking, drop stray commits if needed with another `git rebase -i`
-- Verify `git diff origin/master`, run `sbt compile`, push with `--force-with-lease`, and update the PR
-
-### Cherry-Pick Rebase Guide
-- `git fetch origin master <source-branch>` to refresh both the base and the stack you’ll replay.
-- Reset to the base and branch: `git checkout origin/master` then `git checkout -b <new-branch>`.
-- List commits to replay oldest-first: `git log --reverse --oneline origin/master..<source-branch>`.
-- `git cherry-pick <sha>` sequentially; on conflicts, use `git status`, restore/drop out-of-scope files (`git restore --source=origin/master …`, `git rm …`), stage fixes, and `git cherry-pick --continue` (skip if empty).
-- After the last commit, confirm scope with `git diff --stat origin/master`, run build/tests, push the new branch, and open/update the PR.
+### Restacking Branches
+- **Interactive rebase (rewrite in place)** — use when you can safely rewrite the existing branch history (e.g., before sharing or when collaborators expect a linear update).
+  - `git fetch origin master`
+  - `GIT_SEQUENCE_EDITOR="sed -i '' -e 's/^pick /edit /'" git rebase -i origin/master`
+  - At each stop adjust files to the PR scope (`git restore`, `git rm`), stage, `git commit --amend`, then `GIT_EDITOR=true git rebase --continue`; skip if nothing remains
+  - Resolve conflicts by keeping only in-scope paths, stage fixes, continue, and drop any stray commits with another interactive rebase if needed
+  - Verify `git diff origin/master`, run validation (`sbt compile`), push with `--force-with-lease`, and update the PR
+- **Cherry-pick restack (new branch)** — use when you must preserve the original branch or when the base changed significantly (e.g., merged PR already rewrote history).
+  - `git fetch origin master <source-branch>` to refresh both base and source commits
+  - Start clean from the base: `git checkout origin/master`, then `git checkout -b <new-branch>`
+  - List commits oldest first with `git log --reverse --oneline origin/master..<source-branch>` and `git cherry-pick <sha>` sequentially
+  - On conflicts, consult `git status`, restore/drop out-of-scope files (`git restore --source=origin/master …`, `git rm …`), stage, and `git cherry-pick --continue` (skip empty picks)
+  - After the last commit, confirm scope with `git diff --stat origin/master`, run validation, push the new branch, and open/update the PR
 
 ### Referencing Spark 3.2.1 Sources
 - Find file paths in the Spark SQL sources JAR:
