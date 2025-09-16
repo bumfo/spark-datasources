@@ -1,14 +1,18 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root module (`spark-datasources`): 4mc DataSource V2 for Spark.
-  - Source: `src/main/scala/com/example/fourmc/datasource/*`
-  - SPI registrations: `src/main/resources/META-INF/services/*`
+- Root aggregate (`spark-datasources`): empty wrapper that depends on submodules.
+- Submodule (`fourmc`): Spark 4mc DataSource V2 implementation.
+  - Source: `fourmc/src/main/scala/org/apache/spark/sql/fourmc/*`
+  - SPI registrations: `fourmc/src/main/resources/META-INF/services/*`
 
 ## Build, Test, and Development Commands
-- Root (4mc datasource)
-  - `sbt compile` — compile Scala sources
-  - `sbt package` — build JAR in `target/scala-2.12/`
+- Root aggregate
+  - `sbt compile` — compile all modules (delegates to `fourmc/compile`)
+  - `sbt package` — build aggregated artifacts (primary jar under `fourmc/target/scala-2.12/`)
+- Fourmc module only
+  - `sbt fourmc/compile` — compile just the fourmc sources
+  - `sbt fourmc/package` — build the fourmc datasource jar
 
 ## Coding Style & Naming Conventions
 - Scala 2.12, Spark 3.2.1. Prefer 2‑space indentation; max line ~100 chars.
@@ -23,7 +27,7 @@
 ## Commit & Pull Request Guidelines
 - Commits: concise, imperative subject (<72 chars), body explains motivation and impact.
 - Always add a brief summary body listing key changes; never submit only a one‑line title.
-- Include a valid `Co-Authored-By: Codex CLI` trailer on every commit (use real line breaks; see formatting guidance below).
+- Include a valid `Co-Authored-By: Codex <codex@users.noreply.github.com>` trailer on every commit (use real line breaks; see formatting guidance below).
 - PRs: include description, rationale, and user‑visible changes; link issues; add before/after snippets or screenshots where relevant.
 - CI parity: run `sbt compile` locally before requesting review; include validation steps. For subprojects, follow their AGENTS.md.
 
