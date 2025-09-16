@@ -57,6 +57,14 @@
 - Lambdas in classes capture the whole instance. Put job code in companions.
 - Capture only serializable inputs (e.g., broadcast Hadoop conf, schema), not `SparkSession` or table objects.
 
+### Rebase Checklist
+- `git fetch origin master`
+- `GIT_SEQUENCE_EDITOR="sed -i '' -e 's/^pick /edit /'" git rebase -i origin/master`
+- For each commit: adjust files to PR scope (`git restore`, `git rm`), `git commit --amend`, then `GIT_EDITOR=true git rebase --continue`; skip empty ones
+- Resolve conflicts, keeping only in-scope files; stage fixes and continue
+- After restacking, drop stray commits if needed with another `git rebase -i`
+- Verify `git diff origin/master`, run `sbt compile`, push with `--force-with-lease`, and update the PR
+
 ### Referencing Spark 3.2.1 Sources
 - Find file paths in the Spark SQL sources JAR:
   - `jar tf ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar | grep FileScan.scala`
