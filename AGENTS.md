@@ -1,14 +1,18 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-- Root module (`spark-datasources`): 4mc DataSource V2 for Spark.
-  - Source: `src/main/scala/com/example/fourmc/datasource/*`
-  - SPI registrations: `src/main/resources/META-INF/services/*`
+- Root aggregate (`spark-datasources`): empty wrapper that depends on submodules.
+- Submodule (`fourmc`): Spark 4mc DataSource V2 implementation.
+  - Source: `fourmc/src/main/scala/org/apache/spark/sql/fourmc/*`
+  - SPI registrations: `fourmc/src/main/resources/META-INF/services/*`
 
 ## Build, Test, and Development Commands
-- Root (4mc datasource)
-  - `sbt compile` — compile Scala sources
-  - `sbt package` — build JAR in `target/scala-2.12/`
+- Root aggregate
+  - `sbt compile` — compile all modules (delegates to `fourmc/compile`)
+  - `sbt package` — build aggregated artifacts (primary jar under `fourmc/target/scala-2.12/`)
+- Fourmc module only
+  - `sbt fourmc/compile` — compile just the fourmc sources
+  - `sbt fourmc/package` — build the fourmc datasource jar
 
 ## Coding Style & Naming Conventions
 - Scala 2.12, Spark 3.2.1. Prefer 2‑space indentation; max line ~100 chars.
