@@ -23,16 +23,9 @@
 ## Commit & Pull Request Guidelines
 - Commits: concise, imperative subject (<72 chars), body explains motivation and impact.
 - Always add a brief summary body listing key changes; never submit only a one‑line title.
+- Include a valid `Co-Authored-By: Codex CLI` trailer on every commit (use real line breaks; see formatting guidance below).
 - PRs: include description, rationale, and user‑visible changes; link issues; add before/after snippets or screenshots where relevant.
 - CI parity: run `sbt compile` locally before requesting review; include validation steps. For subprojects, follow their AGENTS.md.
-
-### Commit Trailers (Co-Authored-By)
-- Use a real line break for trailers; do not embed "\n" inside quotes.
-- New commit example:
-  - `git commit -m "Subject" -m "Body" -m "Co-Authored-By: Codex CLI"`
-- Amend last commit (preserve subject/body manually):
-  - `git commit --amend -m "Subject" -m "Body" -m "Co-Authored-By: Codex CLI"`
-  - Or interactively: `git commit --amend` and add `Co-Authored-By: Codex CLI` on a new line.
 
 ### Commit Message Formatting
 - Always use real line breaks inside bash quotes; both `\n` and `\\n` are incorrect (they are recorded literally).
@@ -59,6 +52,25 @@
   - `rm -f .git/index.lock && git add <files> && git commit -m "..."`
   - Use only when you’re sure no other Git process is running.
 
+### Spark Jobs: Closure Tips
+- Keep Spark closures small; avoid capturing non‑serializable state.
+- Lambdas in classes capture the whole instance. Put job code in companions.
+- Capture only serializable inputs (e.g., broadcast Hadoop conf, schema), not `SparkSession` or table objects.
+
+### Restacking Branches
+- **Interactive rebase (rewrite in place)** — use when you can safely rewrite the existing branch history (e.g., before sharing or when collaborators expect a linear update).
+  - `git fetch origin master`
+  - `GIT_SEQUENCE_EDITOR="sed -i '' -e 's/^pick /edit /'" git rebase -i origin/master`
+  - At each stop adjust files to the PR scope (`git restore`, `git rm`), stage, `git commit --amend`, then `GIT_EDITOR=true git rebase --continue`; skip if nothing remains
+  - Resolve conflicts by keeping only in-scope paths, stage fixes, continue, and drop any stray commits with another interactive rebase if needed
+  - Verify `git diff origin/master`, run validation (`sbt compile`), push with `--force-with-lease`, and update the PR
+- **Cherry-pick restack (new branch)** — use when you must preserve the original branch or when the base changed significantly (e.g., merged PR already rewrote history).
+  - `git fetch origin master <source-branch>` to refresh both base and source commits
+  - Start clean from the base: `git checkout origin/master`, then `git checkout -b <new-branch>`
+  - List commits oldest first with `git log --reverse --oneline origin/master..<source-branch>` and `git cherry-pick <sha>` sequentially
+  - On conflicts, consult `git status`, restore/drop out-of-scope files (`git restore --source=origin/master …`, `git rm …`), stage, and `git cherry-pick --continue` (skip empty picks)
+  - After the last commit, confirm scope with `git diff --stat origin/master`, run validation, push the new branch, and open/update the PR
+
 ### Referencing Spark 3.2.1 Sources
 - Find file paths in the Spark SQL sources JAR:
   - `jar tf ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar | grep FileScan.scala`
@@ -66,3 +78,7 @@
 - Print a source file to the terminal:
   - `unzip -p ~/Library/Caches/Coursier/v1/https/repo1.maven.org/maven2/org/apache/spark/spark-sql_2.12/3.2.1/spark-sql_2.12-3.2.1-sources.jar org/apache/spark/sql/execution/datasources/v2/FileScan.scala | sed -n '1,200p'`
 - Tip: use `rg` instead of `grep` if available for faster search.
+
+### Scala-Java Interop Tips
+- **In-place array shuffle:** Use `Collections.shuffle(Arrays.asList(array: _*))` for efficient mutable shuffling of object arrays in Scala. Doesn't work with primitive arrays.
+- **Collection performance:** Use `collection.iterator.map(f).filter(p).toArray` instead of eager chains; avoid `Seq(...)`, `toList` and `iterator.toSeq` in Scala 2.12 (slow linked list/Stream). ArrayBuffer or array.toSeq are acceptable (both backed by arrays).
