@@ -64,7 +64,7 @@ class FourMcFileDataSource
    * built-in file sources support a single `path` or a comma-separated
    * list via the `paths` option.  We implement similar logic here.
    */
-  private def parsePaths(options: CaseInsensitiveStringMap): Seq[String] = {
+  protected def parsePaths(options: CaseInsensitiveStringMap): Seq[String] = {
     val paths = new scala.collection.mutable.ArrayBuffer[String]()
     val pathOpt = Option(options.get("path")).map(_.trim).filter(_.nonEmpty)
     pathOpt.foreach(paths += _)
@@ -83,7 +83,7 @@ class FourMcFileDataSource
    * these keys so that the remaining options can be consumed by the
    * table and scan implementations.
    */
-  private def dropPathOptions(options: CaseInsensitiveStringMap): CaseInsensitiveStringMap = {
+  protected def dropPathOptions(options: CaseInsensitiveStringMap): CaseInsensitiveStringMap = {
     val map = new java.util.HashMap[String, String]()
     val iter = options.entrySet().iterator()
     while (iter.hasNext) {
@@ -101,7 +101,7 @@ class FourMcFileDataSource
    * sources use the first path as the table name when multiple paths are
    * provided.  We follow the same convention.
    */
-  private def computeTableName(paths: Seq[String]): String = {
+  protected def computeTableName(paths: Seq[String]): String = {
     if (paths.isEmpty) "4mc"
     else {
       // Use the last component of the first path as the table name.
@@ -111,4 +111,6 @@ class FourMcFileDataSource
       else first
     }
   }
+
+  override def supportsExternalMetadata(): Boolean = false
 }

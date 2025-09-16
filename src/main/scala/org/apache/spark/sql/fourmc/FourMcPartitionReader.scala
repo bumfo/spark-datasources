@@ -33,7 +33,7 @@ final class FourMcPartitionReaderFactory(
   // generate bridge methods for generic variants.
   override def createReader(partition: InputPartition): PartitionReader[InternalRow] = {
     val fp = partition.asInstanceOf[org.apache.spark.sql.execution.datasources.FilePartition]
-    new FourMcMultiSliceReader(fp.files.toSeq, dataSchema, withOffset, broadcastConf)
+    new FourMcMultiSliceReader(fp.files, dataSchema, withOffset, broadcastConf)
   }
 }
 
@@ -43,14 +43,13 @@ final class FourMcPartitionReaderFactory(
  * exhausts, the reader closes it and advances to the next.
  */
 final class FourMcMultiSliceReader(
-    slices: Seq[PartitionedFile],
+    slices: Array[PartitionedFile],
     dataSchema: StructType,
     withOffset: Boolean,
     broadcastConf: Broadcast[SerializableConfiguration]
 ) extends PartitionReader[InternalRow] {
 
   private val conf: Configuration = broadcastConf.value.value
-  private val row = new GenericInternalRow(dataSchema.length)
   private var sliceIndex = 0
   private var current: FourMcSliceReader = _
 

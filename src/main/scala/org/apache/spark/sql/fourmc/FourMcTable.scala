@@ -8,6 +8,7 @@ import org.apache.spark.sql.execution.datasources.FileFormat
 import org.apache.spark.sql.execution.datasources.v2.FileTable
 import org.apache.spark.sql.types._
 import org.apache.spark.sql.util.CaseInsensitiveStringMap
+import org.apache.spark.util.SerializableConfiguration
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -25,22 +26,28 @@ import scala.collection.JavaConverters._
  * @param userSpecifiedSchema optional user-provided schema
  * @param fallbackFileFormat  v1 fallback (unused for reading but required by FileTable)
  */
-final case class FourMcTable(
-    name: String,
-    sparkSession: SparkSession,
-    options: CaseInsensitiveStringMap,
-    paths: Seq[String],
-    userSpecifiedSchema: Option[StructType],
-    fallbackFileFormat: Class[_ <: FileFormat]
+class FourMcTable(
+    val name: String,
+    val sparkSession: SparkSession,
+    val options: CaseInsensitiveStringMap,
+    val paths: Seq[String],
+    val userSpecifiedSchema: Option[StructType],
+    val fallbackFileFormat: Class[_ <: FileFormat]
 ) extends FileTable(sparkSession, options, paths, userSpecifiedSchema) with Logging {
+  protected lazy val planner: FourMcPlanner = {
+    val br = sparkSession.sparkContext.broadcast(new SerializableConfiguration(sparkSession.sessionState.newHadoopConf()))
+    FourMcPlanner(sparkSession, fileIndex, options, fileIndex.partitionSchema, Seq.empty, Seq.empty, br)
+  }
 
   /**
    * Build a custom scan for this table.  The returned builder will plan
    * partitions based on the 4mc footer block index and create readers
    * accordingly.
    */
-  private lazy val cachedScanBuilder: FourMcScanBuilder =
-    new FourMcScanBuilder(sparkSession, fileIndex, options)
+  protected def buildScanBuilder(): FourMcScanBuilder =
+    new FourMcScanBuilder(sparkSession, fileIndex, options, planner)
+
+  private lazy val cachedScanBuilder: FourMcScanBuilder = buildScanBuilder()
 
   override def newScanBuilder(options: CaseInsensitiveStringMap): FourMcScanBuilder = {
     // Sanity check: warn if options differ from the cached builder's options.
@@ -86,10 +93,12 @@ final case class FourMcTable(
    * types (e.g., String, Int, Long) and user-defined types that reduce to
    * atomic types.
    */
+  override def supportsDataType(dataType: DataType): Boolean = supportsDataType0(dataType)
+
   @tailrec
-  override def supportsDataType(dataType: DataType): Boolean = dataType match {
+  private final def supportsDataType0(dataType: DataType): Boolean = dataType match {
     case _: AtomicType => true
-    case udt: UserDefinedType[_] => supportsDataType(udt.sqlType)
+    case udt: UserDefinedType[_] => supportsDataType0(udt.sqlType)
     case _ => false
   }
 
@@ -99,4 +108,15 @@ final case class FourMcTable(
   override def formatName: String = "4MC"
 
   override def newWriteBuilder(info: LogicalWriteInfo): WriteBuilder = throw new NotImplementedError("Only support read")
+}
+
+object FourMcTable {
+  def apply(
+      name: String,
+      sparkSession: SparkSession,
+      options: CaseInsensitiveStringMap,
+      paths: Seq[String],
+      userSpecifiedSchema: Option[StructType],
+      fallbackFileFormat: Class[_ <: FileFormat]
+  ): FourMcTable = new FourMcTable(name, sparkSession, options, paths, userSpecifiedSchema, fallbackFileFormat)
 }
