@@ -41,7 +41,7 @@ val df = spark.read
 df.show(false)
 ```
 
-Accepted options:
+Datasource options:
 
 | Option                                 | Description                                                                                                                                  | Default                                                                                        |
 |----------------------------------------|----------------------------------------------------------------------------------------------------------------------------------------------|------------------------------------------------------------------------------------------------|
@@ -51,6 +51,15 @@ Accepted options:
 | `fourmc.parallelExpand.enabled`        | Enable driver-side parallel expansion of large file listings using Spark executors.                                                          | `true`                                                                                         |
 | `fourmc.parallelExpand.threshold`      | Minimum file count before remote expansion kicks in. Mirrors Spark’s `parallelPartitionDiscoveryThreshold`.                                  | Session default                                                                                |
 | `fourmc.parallelExpand.maxParallelism` | Upper bound for expansion jobs submitted to executors. Mirrors `parallelPartitionDiscoveryParallelism`.                                      | Session default                                                                                |
+
+Session-level knobs:
+
+| Spark SQL Config                                           | Description                                                                                | Default (Spark)                     |
+|------------------------------------------------------------|--------------------------------------------------------------------------------------------|-------------------------------------|
+| `spark.sql.files.fourmc.maxPartitionBytes`                 | Per-slice compressed size ceiling respected by the planner unless the option overrides it. | `spark.sql.files.maxPartitionBytes` |
+| `spark.sql.caseSensitive`                                  | Controls case sensitivity when matching partition columns.                                 | `false`                             |
+| `spark.sql.sources.parallelPartitionDiscovery.threshold`   | Threshold before Spark assists in listing large directories; reused by planner.            | `32`                                |
+| `spark.sql.sources.parallelPartitionDiscovery.parallelism` | Maximum Spark-side parallelism for partition discovery jobs.                               | `10000`                             |
 
 ## Architecture Overview
 
