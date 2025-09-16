@@ -1,56 +1,39 @@
-# fourmc-datasource-v2: Spark DataFrame integration for 4mc with DSv2
+# spark-datasources
 
-This project provides a **DataSource V2** implementation for reading 4mc‐compressed text files into Spark DataFrames.  It extends Spark’s **FileDataSourceV2** and **FileTable** to leverage Spark’s distributed file discovery and partition pruning.  Unlike earlier attempts that relied on `newAPIHadoopFile` or bridge formats, this implementation honors the 4mc block index when planning splits and uses Spark’s native DataFrame API end‑to‑end.
+This repository hosts experimental Spark DataSource V2 implementations.  The
+primary module today is **fourmc**, a reader that understands the block
+structure of 4mc-compressed text files and exposes them through the DataFrame
+API. 
 
-## Key features
+## Modules
 
-- **Block‑aligned splitting**: Uses the 4mc footer index (via `FourMcBlockIndex`) to align partition boundaries to compressed block starts and ends【696825297841155†L145-L188】.  The first partition always starts at byte `0L`, so the `FourMcLineRecordReader` does not skip the first line【770294647968254†L152-L158】, and the final partition always extends to the end of the file.  This avoids decoding in the middle of a block and prevents errors like “compressed length exceeds max block size”.
-- **DataSource V2 integration**: Extends `FileDataSourceV2`, `FileTable` and `FileScan` so you can call `spark.read.format("fourmc")` directly—no `newAPIHadoopFile` intermediate required.  By building on Spark’s file‑source stack, the implementation benefits from distributed file listing, partition pruning and automatic coalescing.
-- **Options**:
-    - `path` or `paths`: one or multiple comma‐separated paths to files/directories.
-    - `withOffset` (default `false`): when `true`, includes a `BIGINT offset` column with the byte position of each line.
-    - `encoding` (default `UTF-8`): character set used to decode lines.
-    - `maxPartitionBytes` (default `spark.sql.files.maxPartitionBytes` or `128MiB`): maximum compressed bytes per partition.
-    - Arbitrary `conf.*` options can be passed through to the Hadoop `Configuration` if needed (e.g., to adjust Hadoop FS settings).
-- **Janino‐safe**: Only type‐erased interfaces are overridden; there is no generic method signature that Janino would struggle to bridge.
+| Path      | Description                                                                                                                                                          |
+|-----------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `fourmc/` | Datasource implementation, planner, and documentation for reading `.4mc` files with Spark 3.2.1.  See [`fourmc/README.md`](fourmc/README.md) for a full walkthrough. |
 
-## How splitting works
+## Getting Started
 
-1. For each file, the code reads the 4mc block index using `FourMcBlockIndex.readIndex(...)`【696825297841155†L145-L188】.
-2. It computes absolute block offsets (compressed positions) and accumulates them into **block‑aligned slices** whose total length does not exceed `maxPartitionBytes`.  The first slice starts at `0L`; the last slice ends at the file length.
-3. These slices are mapped back into Spark’s generic `PartitionedFile` abstraction, so Spark can coalesce them into `FilePartition`s for scheduling.
-4. At read time, the `FourMcPartitionReader` instantiates a `FourMcLineRecordReader` on the corresponding `FileSplit(start, length)` and yields lines (and offsets, if requested) as `InternalRow`s.
-
-## Usage
-
-1. Build the project:
+Most development tasks happen from the repository root:
 
 ```bash
-sbt package
+sbt compile   # checks all modules still build against Scala 2.12 / Spark 3.2.1
+sbt package   # assembles module artifacts into target/scala-2.12/
 ```
 
-2. Ship the resulting JAR to your Spark cluster.
+When targeting a specific datasource (for example the fourmc reader), consult
+its module README for usage examples, configuration options, and architecture
+notes.
 
-3. Register and read:
+## Repository Docs
 
-```scala
-spark.read
-  .format("fourmc")
-  .option("path", "/path/to/your/file.4mc")
-  .option("withOffset", "true")    // optional
-  .option("maxPartitionBytes", "67108864")  // optional (64 MiB)
-  .load()
-  .show(false)
-```
+- [`AGENTS.md`](AGENTS.md) – house rules for contributors and automated
+  assistants (coding style, rebasing instructions, etc.).
+- [`fourmc/README.md`](fourmc/README.md) – deep dive into the FourMC data
+  source, including planner design and reader internals.
 
-You can specify multiple files or directories in `paths` (comma‐separated). The reader will recursively descend into directories and ignore hidden files (`.` and `_` prefixes) and non‐4mc files.
+## Contributing
 
-## Limitations & future work
-
-- Currently only supports **text lines** with optional offsets. If you need to emit raw bytes or support other formats (CSV, JSON), extend the `FourMcPartitionReader` accordingly.
-- The block‐aligned partitioning uses compressed byte sizes; large uncompressed blocks may skew data distribution.
-- Schema pruning and filter pushdown are not implemented. Those would require further integration with Spark’s predicate pushdown API.
-
-## References
-
-- 4mc block index usage and alignment functions (`alignSliceStartToIndex`, `alignSliceEndToIndex`) are described in the source【696825297841155†L145-L188】.
+Follow the guidelines in `AGENTS.md`: keep commits focused, and run `sbt compile` before
+proposing changes.  Open discussions or drafts for new datasources by placing
+them under their own subdirectory and documenting their behaviour similarly to
+the fourmc module.

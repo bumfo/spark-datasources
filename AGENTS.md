@@ -23,7 +23,7 @@
 ## Commit & Pull Request Guidelines
 - Commits: concise, imperative subject (<72 chars), body explains motivation and impact.
 - Always add a brief summary body listing key changes; never submit only a one‑line title.
-- Include a valid `Co-Authored-By: Codex CLI` trailer on every commit (use real line breaks; see formatting guidance below).
+- Include a valid `Co-Authored-By: Codex <codex@users.noreply.github.com>` trailer on every commit (use real line breaks; see formatting guidance below).
 - PRs: include description, rationale, and user‑visible changes; link issues; add before/after snippets or screenshots where relevant.
 - CI parity: run `sbt compile` locally before requesting review; include validation steps. For subprojects, follow their AGENTS.md.
 
